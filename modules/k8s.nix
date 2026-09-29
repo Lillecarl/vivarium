@@ -511,6 +511,7 @@ let
     gVisor, and brings its own shim. Its `systemd-cgroup` matches the
     `SystemdCgroup` runc gets -- kubelet hands every runtime a cgroup parent
     in the systemd form, and runsc refuses one it was not told to expect.
+    kata runs each pod in a QEMU VM of its own, through its own shim.
   */
   runtimeHandlers = {
     crun = {
@@ -531,7 +532,13 @@ let
         );
       };
     };
+    kata = {
+      runtime_type = "io.containerd.kata.v2";
+      options.ConfigPath = kataConfig;
+    };
   };
+
+  kataConfig = "${pkgs.kata-runtime}/share/defaults/kata-containers/configuration-qemu.toml";
 
   # What `bring_up` applies, like `storageManifest`: a RuntimeClass per
   # handler, named after it.
@@ -641,6 +648,7 @@ in
         lib.types.enum [
           "crun"
           "runsc"
+          "kata"
         ]
       );
       default = [ ];
@@ -656,6 +664,9 @@ in
         `runsc` is gVisor, and needs the QEMU backend and containerd: under
         UML its shim panics at start with "None of the address space sizes
         could be successfully mmaped", and under CRI-O no container runs.
+
+        `kata` is Kata Containers, and needs `boot.uml.nestedVirtualization`:
+        it starts a VM per pod.
       '';
     };
 
@@ -763,6 +774,10 @@ in
         message = "services.uml-k8s.runtimes: runsc (gVisor) does not run a container under CRI-O here; use cri = \"containerd\".";
       }
       {
+        assertion = lib.elem "kata" cfg.runtimes -> config.boot.uml.nestedVirtualization;
+        message = "services.uml-k8s.runtimes: kata starts a VM per pod and needs boot.uml.nestedVirtualization.";
+      }
+      {
         assertion = config.boot.uml.lan.address != null;
         message = ''
           services.uml-k8s needs boot.uml.lan.address: every guest shares
@@ -806,6 +821,7 @@ in
     # containerd finds a shim, and the shim its runtime, on PATH.
     systemd.services.containerd.path = lib.mkIf (cfg.cri == "containerd") (
       lib.optional (lib.elem "runsc" cfg.runtimes) pkgs.gvisor
+      ++ lib.optional (lib.elem "kata" cfg.runtimes) pkgs.kata-runtime
     );
 
     virtualisation.cri-o = lib.mkIf (cfg.cri == "crio") {
@@ -826,6 +842,15 @@ in
         // lib.genAttrs cfg.runtimes (_: { })
         // lib.optionalAttrs (lib.elem "runsc" cfg.runtimes) {
           runsc.runtime_root = "/run/runsc";
+        }
+        // lib.optionalAttrs (lib.elem "kata" cfg.runtimes) {
+          kata = {
+            runtime_path = "${pkgs.kata-runtime}/bin/containerd-shim-kata-v2";
+            runtime_type = "vm";
+            runtime_root = "/run/vc";
+            runtime_config_path = kataConfig;
+            privileged_without_host_devices = true;
+          };
         };
         nri.enable_nri = cfg.nri;
         # CRI-O saves and restores the IRQ affinity mask at start, and the
@@ -1030,7 +1055,11 @@ in
       HTTP and could not reach 10.96.0.10 at all, which reads as broken
       DNS rather than as an unloaded module.
     */
-    boot.kernelModules = [ "br_netfilter" ];
+    # kata's agent talks to its VM over vsock.
+    boot.kernelModules = [
+      "br_netfilter"
+    ]
+    ++ lib.optional (lib.elem "kata" cfg.runtimes) "vhost_vsock";
 
     /*
       Leave a veth's MAC where CNI put it.

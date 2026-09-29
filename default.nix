@@ -58,6 +58,39 @@ let
     services.iperf3-server.enable = true;
   }) (pair "lan");
 
+  # `containerd`'s questions with kata as the only extra handler. The node
+  # holds kata's VM too, 2 GiB by kata's default; guest RAM is sparse, so
+  # the ceiling costs nothing until touched.
+  kataTest =
+    cri:
+    mkTest {
+      name = "kata-${cri}";
+      backend = "qemu";
+      script = ./tests/containerd.py;
+      nodes.node = {
+        imports = [ ./modules/k8s.nix ];
+        services.uml-k8s = {
+          enable = true;
+          role = "worker";
+          inherit cri;
+          runtimes = [ "kata" ];
+        };
+        boot.uml = {
+          nestedVirtualization = true;
+          memory = "4096M";
+          diskSize = 2048;
+          lan = {
+            network = "kata";
+            address = "10.106.0.1/24";
+          };
+        };
+      };
+      settings = {
+        inherit (k8sImages) sandboxImage entrypoints;
+        kubernetesVersion = pkgs.kubernetes.version;
+      };
+    };
+
   /*
     Three guests running kubeadm: one control plane, two workers.
 
@@ -1185,6 +1218,16 @@ let
         kubernetesVersion = pkgs.kubernetes.version;
       };
     };
+
+    /*
+      The same questions under Kata Containers, a QEMU VM per pod.
+
+      By hand, not in CI, like `nested`: a GitHub runner's KVM does not
+      nest again. Not under CRI-O: this image's command is a symlink into
+      /nix/store, and kata 3.32's agent reports "the file kube-apiserver
+      was not found" for it there, with /nix/store mounted in the pod.
+    */
+    kata = kataTest "containerd";
 
     # The same questions under CRI-O. nixkube#74.
     crio = mkTest {
