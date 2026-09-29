@@ -29,6 +29,11 @@ from uml_runner import Machine, MachineError, Machines, run_test
 # Host network, so a sandbox needs no CNI: NamespaceMode.NODE is 2 in the
 # CRI API.  This test is not about networking.
 NODE_NETWORK = 2
+# A VM has no host network to share. CRI-O refuses one for kata with "Host
+# networking requested, not supported by runtime"; containerd accepts it.
+POD_NETWORK = 0
+VM_HANDLERS = {"kata"}
+POD_CIDR = "10.244.0.0/24"
 
 LOG_DIR = "/tmp/probe-logs"
 
@@ -43,7 +48,7 @@ TUNABLES = [
 ]
 
 
-def pod(name: str) -> dict:
+def pod(name: str, network: int = NODE_NETWORK) -> dict:
     return {
         "metadata": {"name": name, "namespace": "default", "uid": f"{name}-uid"},
         # A container's log_path is relative to this, and without it the
@@ -57,7 +62,7 @@ def pod(name: str) -> dict:
             # "slice:prefix:name".  Nothing here creates it -- system.slice
             # already exists.
             "cgroup_parent": "system.slice",
-            "security_context": {"namespace_options": {"network": NODE_NETWORK}},
+            "security_context": {"namespace_options": {"network": network}},
         },
     }
 
@@ -171,7 +176,11 @@ async def test(vms: Machines) -> None:
 
 async def probe(node: Machine, handler: str, version: str) -> None:
     """Run the store probe under one containerd runtime handler."""
-    await write_json(node, f"/tmp/pod-{handler}.json", pod(f"probe-{handler}"))
+    network = NODE_NETWORK
+    if handler in VM_HANDLERS:
+        await node.succeed(f"uml-k8s-cni {POD_CIDR}")
+        network = POD_NETWORK
+    await write_json(node, f"/tmp/pod-{handler}.json", pod(f"probe-{handler}", network))
 
     # --no-pull, because there is nothing to pull from: if the image is
     # not already here the test should say so rather than time out on a

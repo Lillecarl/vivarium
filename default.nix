@@ -1220,14 +1220,14 @@ let
     };
 
     /*
-      The same questions under Kata Containers, a QEMU VM per pod.
+      The same questions under Kata Containers, a QEMU VM per pod, on
+      either CRI. `kata` is CRI-O, as OpenShift runs it.
 
       By hand, not in CI, like `nested`: a GitHub runner's KVM does not
-      nest again. Not under CRI-O: this image's command is a symlink into
-      /nix/store, and kata 3.32's agent reports "the file kube-apiserver
-      was not found" for it there, with /nix/store mounted in the pod.
+      nest again.
     */
-    kata = kataTest "containerd";
+    kata = kataTest "crio";
+    kata-containerd = kataTest "containerd";
 
     # The same questions under CRI-O. nixkube#74.
     crio = mkTest {
