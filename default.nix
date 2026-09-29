@@ -1186,6 +1186,37 @@ let
       };
     };
 
+    # The same questions under CRI-O. nixkube#74.
+    crio = mkTest {
+      name = "crio";
+      script = ./tests/containerd.py;
+      nodes.node =
+        { config, ... }:
+        {
+          imports = [ ./modules/k8s.nix ];
+          services.uml-k8s = {
+            enable = true;
+            role = "worker";
+            cri = "crio";
+            # Not runsc, which runs no container under CRI-O; see the
+            # module's assertion.
+            runtimes = [ "crun" ];
+          };
+          boot.uml = {
+            memory = "1024M";
+            diskSize = 2048;
+            lan = {
+              network = "crio";
+              address = "10.105.0.1/24";
+            };
+          };
+        };
+      settings = {
+        inherit (k8sImages) sandboxImage entrypoints;
+        kubernetesVersion = pkgs.kubernetes.version;
+      };
+    };
+
     # Does a real workload come up across three nodes?  Far heavier
     # than the others: three guests, a control plane and a container
     # runtime, so this one wants a builder rather than a laptop.

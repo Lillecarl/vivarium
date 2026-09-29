@@ -93,7 +93,7 @@ async def test(vms: Machines) -> None:
     node = vms.node
     version = vms.settings["kubernetesVersion"]
 
-    await node.wait_for_unit("containerd.service", timeout=300)
+    await node.wait_for_unit("uml-k8s-cri.target", timeout=300)
     await node.wait_for_unit("k8s-load-images.service", timeout=600)
 
     # cadvisor refuses to start kubelet on a machine with no clock speed,
@@ -126,8 +126,9 @@ async def test(vms: Machines) -> None:
         )
     print(f"[test] all {len(TUNABLES)} of kubelet's kernel tunables are settable", flush=True)
 
-    images = (await node.succeed("ctr --namespace k8s.io images list -q")).split()
-    print(f"[test] containerd has {len(images)} images", flush=True)
+    listed = json.loads(await node.succeed("crictl images --output json"))
+    images = [tag for image in listed["images"] for tag in image.get("repoTags") or []]
+    print(f"[test] the runtime has {len(images)} images", flush=True)
     for expected in (f"registry.k8s.io/kube-apiserver:v{version}", vms.settings["sandboxImage"]):
         if expected not in images:
             raise MachineError(
@@ -157,10 +158,13 @@ async def test(vms: Machines) -> None:
     await node.succeed(f"mkdir -p {LOG_DIR}")
     await write_json(node, "/tmp/container.json", container(image))
 
-    # Asked of containerd, so the script is the same on either backend.
+    # Asked of the runtime, so the script is the same on either backend
+    # and either CRI. The CRI status lists the handlers since 1.30. The
+    # default one comes back once more with no name: JSON drops an empty
+    # proto3 string.
     info = json.loads(await node.succeed("crictl info"))
-    handlers = sorted(info["config"]["containerd"]["runtimes"])
-    print(f"[test] containerd offers {', '.join(handlers)}", flush=True)
+    handlers = sorted({h["name"] for h in info["runtimeHandlers"] if h.get("name")})
+    print(f"[test] the runtime offers {', '.join(handlers)}", flush=True)
     for handler in handlers:
         await probe(node, handler, version)
 

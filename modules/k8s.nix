@@ -1,4 +1,4 @@
-# A kubeadm node: containerd, kubelet, and the images to feed them.
+# A kubeadm node: a container runtime, kubelet, and the images to feed them.
 #
 # Everything a node can know about itself lives here.  Everything that
 # needs to know about the *other* nodes -- the join command, which pod
@@ -17,7 +17,21 @@ let
   images = pkgs.callPackage ./k8s-images.nix { };
 
   kubernetes = pkgs.kubernetes;
-  criSocket = "unix:///run/containerd/containerd.sock";
+  # The unit that serves the CRI, and where. `uml-k8s-cri.target` names the
+  # unit, so `bring_up` waits for either without knowing which.
+  cri =
+    {
+      containerd = {
+        unit = "containerd.service";
+        socket = "unix:///run/containerd/containerd.sock";
+      };
+      crio = {
+        unit = "crio.service";
+        socket = "unix:///run/crio/crio.sock";
+      };
+    }
+    .${cfg.cri};
+  criSocket = cri.socket;
 
   # The node's address on the segment.  vec0 is passt's NAT, and every
   # guest sits behind it on the same 10.0.2.x address -- so a node that
@@ -610,6 +624,18 @@ in
       '';
     };
 
+    cri = lib.mkOption {
+      type = lib.types.enum [
+        "containerd"
+        "crio"
+      ];
+      default = "containerd";
+      description = ''
+        The container runtime kubelet talks to. Both run runc by default,
+        load the same images and speak NRI when `nri` is on.
+      '';
+    };
+
     runtimes = lib.mkOption {
       type = lib.types.listOf (
         lib.types.enum [
@@ -627,9 +653,9 @@ in
         a RuntimeClass of the same name. A pod picks one with
         `runtimeClassName`; a pod without one still gets runc.
 
-        `runsc` is gVisor, and needs the QEMU backend: under UML its shim
-        panics at start with "None of the address space sizes could be
-        successfully mmaped".
+        `runsc` is gVisor, and needs the QEMU backend and containerd: under
+        UML its shim panics at start with "None of the address space sizes
+        could be successfully mmaped", and under CRI-O no container runs.
       '';
     };
 
@@ -729,6 +755,14 @@ in
         message = "services.uml-k8s.runtimes: runsc (gVisor) does not start under UML; use the qemu backend.";
       }
       {
+        # Measured with CRI-O 1.36.5 and runsc 20260406, on a plain busybox
+        # pod: with drop_infra_ctr the sandbox's runsc state never exists
+        # ("cannot load sandbox"); without it, conmon never finds the exit
+        # file and the container ends with exit code -1 and no output.
+        assertion = !(lib.elem "runsc" cfg.runtimes && cfg.cri == "crio");
+        message = "services.uml-k8s.runtimes: runsc (gVisor) does not run a container under CRI-O here; use cri = \"containerd\".";
+      }
+      {
         assertion = config.boot.uml.lan.address != null;
         message = ''
           services.uml-k8s needs boot.uml.lan.address: every guest shares
@@ -740,7 +774,7 @@ in
 
     # ── the container runtime ──────────────────────────────────────
 
-    virtualisation.containerd = {
+    virtualisation.containerd = lib.mkIf (cfg.cri == "containerd") {
       enable = true;
       settings = {
         # containerd 2.x still reads a version 2 file, by migrating it and
@@ -770,7 +804,43 @@ in
     };
 
     # containerd finds a shim, and the shim its runtime, on PATH.
-    systemd.services.containerd.path = lib.optional (lib.elem "runsc" cfg.runtimes) pkgs.gvisor;
+    systemd.services.containerd.path = lib.mkIf (cfg.cri == "containerd") (
+      lib.optional (lib.elem "runsc" cfg.runtimes) pkgs.gvisor
+    );
+
+    virtualisation.cri-o = lib.mkIf (cfg.cri == "crio") {
+      enable = true;
+      pauseImage = images.sandboxImage;
+      # CRI-O runs this in place of the image's entrypoint, and its default
+      # is upstream's `/pause`. Ours is where ./k8s-images.nix puts every
+      # command.
+      pauseCommand = "/usr/local/bin/pause";
+      extraPackages = lib.optional (lib.elem "runsc" cfg.runtimes) pkgs.gvisor;
+      settings.crio = {
+        # runc, as under containerd. CRI-O's own default is crun, and a
+        # test that compares the two CRIs should not also compare runtimes.
+        runtime.default_runtime = "runc";
+        runtime.runtimes = {
+          runc = { };
+        }
+        // lib.genAttrs cfg.runtimes (_: { })
+        // lib.optionalAttrs (lib.elem "runsc" cfg.runtimes) {
+          runsc.runtime_root = "/run/runsc";
+        };
+        nri.enable_nri = cfg.nri;
+        # CRI-O saves and restores the IRQ affinity mask at start, and the
+        # UML kernel has no /proc/irq: CRI-O exits with "open
+        # /proc/irq/default_smp_affinity: no such file or directory".
+        runtime.irqbalance_config_restore_file = "disable";
+      };
+    };
+
+    systemd.targets.uml-k8s-cri = {
+      description = "The container runtime kubelet talks to";
+      wantedBy = [ "multi-user.target" ];
+      requires = [ cri.unit ];
+      after = [ cri.unit ];
+    };
 
     # ── the images, before anything wants them ─────────────────────
 
@@ -788,14 +858,14 @@ in
     system.extraDependencies = lib.mkIf (cfg.images == "nix") images.runtimeInputs;
 
     systemd.services.k8s-load-images = lib.mkIf (cfg.images == "nix") {
-      description = "Import the kubeadm images into containerd";
+      description = "Import the kubeadm images into the container runtime";
       wantedBy = [ "multi-user.target" ];
-      requires = [ "containerd.service" ];
-      after = [ "containerd.service" ];
+      requires = [ "uml-k8s-cri.target" ];
+      after = [ "uml-k8s-cri.target" ];
       before = [ "kubelet.service" ];
       path = [
-        pkgs.containerd
         pkgs.gzip
+        (if cfg.cri == "containerd" then pkgs.containerd else pkgs.podman)
       ];
       serviceConfig = {
         Type = "oneshot";
@@ -814,17 +884,33 @@ in
         the `--local` path -- importing here rather than handing the tar
         to containerd's transfer service.
       */
-      script = ''
-        for tarball in ${images.tarball} ${lib.escapeShellArgs cfg.extraImages}; do
-          echo "importing $tarball"
-          # `-f` so an uncompressed tarball passes straight through: a
-          # caller's images need not be gzipped to be listed here.
-          zcat -f "$tarball" \
-            | ctr --namespace k8s.io images import \
-                --local --discard-unpacked-layers -
-        done
-        ctr --namespace k8s.io images list -q
-      '';
+      #
+      # CRI-O reads containers-storage, which is podman's; `podman load`
+      # takes a multi-image archive where `skopeo copy` wants one per tag.
+      script =
+        let
+          import =
+            {
+              containerd = "ctr --namespace k8s.io images import --local --discard-unpacked-layers -";
+              crio = "podman load";
+            }
+            .${cfg.cri};
+          list =
+            {
+              containerd = "ctr --namespace k8s.io images list -q";
+              crio = "podman images --format '{{.Repository}}:{{.Tag}}'";
+            }
+            .${cfg.cri};
+        in
+        ''
+          for tarball in ${images.tarball} ${lib.escapeShellArgs cfg.extraImages}; do
+            echo "importing $tarball"
+            # `-f` so an uncompressed tarball passes straight through: a
+            # caller's images need not be gzipped to be listed here.
+            zcat -f "$tarball" | ${import}
+          done
+          ${list}
+        '';
     };
 
     # ── kubelet ────────────────────────────────────────────────────
@@ -891,11 +977,11 @@ in
       description = "kubelet, the Kubernetes node agent";
       wantedBy = [ "multi-user.target" ];
       after = [
-        "containerd.service"
+        "uml-k8s-cri.target"
         "k8s-load-images.service"
         "uml-k8s-cpuinfo.service"
       ];
-      wants = [ "containerd.service" ];
+      wants = [ "uml-k8s-cri.target" ];
       requires = [ "uml-k8s-cpuinfo.service" ];
       unitConfig.ConditionPathExists = "/var/lib/kubelet/config.yaml";
       path = with pkgs; [
@@ -946,6 +1032,21 @@ in
     */
     boot.kernelModules = [ "br_netfilter" ];
 
+    /*
+      Leave a veth's MAC where CNI put it.
+
+      udev's default `.link` gives every new interface a persistent MAC,
+      and the bridge plugin records the one it created. CRI-O runs CNI
+      CHECK on the pod's network, which compares the two, and every pod
+      sandbox failed with "Interface vethXXXX Mac doesn't match". containerd
+      never runs CHECK, so it never saw this. Measured: addr_assign_type 3
+      on each veth, and the stuck pod started once this file was in place.
+    */
+    systemd.network.links."05-cni-veth" = {
+      matchConfig.Driver = "veth";
+      linkConfig.MACAddressPolicy = "none";
+    };
+
     boot.kernel.sysctl = {
       # Traffic between pods on one node crosses the CNI bridge, and
       # without these kube-proxy's rules never see it -- so a Service
@@ -964,6 +1065,11 @@ in
       # two -- unlike `skipAddons`, which a test has to repeat in `addons`.
       "kubernetes/uml-storage.yaml".source = storageManifest;
     }
+    // lib.optionalAttrs (cfg.cri == "crio") {
+      # CRI-O's own bridge sorts before `10-uml.conflist` and would win. The
+      # pod network is `uml-k8s-cni`'s, whichever CRI runs.
+      "cni/net.d/10-crio-bridge.conflist".enable = false;
+    }
     // lib.optionalAttrs (cfg.runtimes != [ ]) {
       # Where `provision_runtimes` looks, on the same terms.
       "kubernetes/uml-runtimes.yaml".source = runtimeManifest;
@@ -980,7 +1086,8 @@ in
         nameserver 192.0.2.1
       '';
 
-      "crictl.yaml".text = ''
+      # Over CRI-O's own, which names its socket and none of the timeout.
+      "crictl.yaml".text = lib.mkForce ''
         runtime-endpoint: ${criSocket}
         image-endpoint: ${criSocket}
         timeout: 60

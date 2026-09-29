@@ -240,6 +240,10 @@ async def diagnose(vm):
             " tail -n 15 -v /var/log/pods/kube-system_*/*/*.log 2>&1 | tail -n 150"
         )
     )[1]
+    # containerd or crio: the unit `services.uml-k8s.cri` put behind the target.
+    runtime = (
+        await vm.execute("systemctl show --property Requires --value uml-k8s-cri.target")
+    )[1].split() or ["containerd.service"]
     return (
         f"--- [{vm.name}] addresses and routes ---\n"
         f"{(await vm.execute('ip -brief addr; ip route; ip -6 route'))[1]}\n"
@@ -247,7 +251,7 @@ async def diagnose(vm):
         f"{await unscheduled(vm)}\n"
         f"--- [{vm.name}] crictl ps -a ---\n{(await vm.execute('crictl ps -a'))[1]}\n"
         f"--- [{vm.name}] kubelet ---\n{await vm.journal('kubelet.service', lines=80)}\n"
-        f"--- [{vm.name}] containerd ---\n{await vm.journal('containerd.service', lines=40)}\n"
+        f"--- [{vm.name}] {runtime[0]} ---\n{await vm.journal(runtime[0], lines=40)}\n"
         f"--- [{vm.name}] pod logs ---\n{logs}"
     )
 
@@ -635,7 +639,7 @@ async def bring_up(
         schedulable = not workers
 
     for vm in vms.values():
-        await vm.wait_for_unit("containerd.service", timeout=UNIT_TIMEOUT)
+        await vm.wait_for_unit("uml-k8s-cri.target", timeout=UNIT_TIMEOUT)
     if nix_images:
         await wait_for_images(vms)
     else:
