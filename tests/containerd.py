@@ -42,22 +42,24 @@ TUNABLES = [
     "kernel/keys/root_maxbytes",
 ]
 
-POD = {
-    "metadata": {"name": "probe", "namespace": "default", "uid": "probe-uid"},
-    # A container's log_path is relative to this, and without it the
-    # runtime keeps no log at all -- `crictl logs` then says the
-    # container "has not set log path", which is true but unhelpful.
-    "log_directory": LOG_DIR,
-    "linux": {
-        # kubelet always names one, and containerd's systemd cgroup driver
-        # can only translate a path it was given: without this it builds
-        # "/k8s.io/<id>", which runc rejects for not being
-        # "slice:prefix:name".  Nothing here creates it -- system.slice
-        # already exists.
-        "cgroup_parent": "system.slice",
-        "security_context": {"namespace_options": {"network": NODE_NETWORK}},
-    },
-}
+
+def pod(name: str) -> dict:
+    return {
+        "metadata": {"name": name, "namespace": "default", "uid": f"{name}-uid"},
+        # A container's log_path is relative to this, and without it the
+        # runtime keeps no log at all -- `crictl logs` then says the
+        # container "has not set log path", which is true but unhelpful.
+        "log_directory": LOG_DIR,
+        "linux": {
+            # kubelet always names one, and containerd's systemd cgroup driver
+            # can only translate a path it was given: without this it builds
+            # "/k8s.io/<id>", which runc rejects for not being
+            # "slice:prefix:name".  Nothing here creates it -- system.slice
+            # already exists.
+            "cgroup_parent": "system.slice",
+            "security_context": {"namespace_options": {"network": NODE_NETWORK}},
+        },
+    }
 
 
 def container(image: str) -> dict:
@@ -153,14 +155,26 @@ async def test(vms: Machines) -> None:
 
     image = f"registry.k8s.io/kube-apiserver:v{version}"
     await node.succeed(f"mkdir -p {LOG_DIR}")
-    await write_json(node, "/tmp/pod.json", POD)
     await write_json(node, "/tmp/container.json", container(image))
+
+    # Asked of containerd, so the script is the same on either backend.
+    info = json.loads(await node.succeed("crictl info"))
+    handlers = sorted(info["config"]["containerd"]["runtimes"])
+    print(f"[test] containerd offers {', '.join(handlers)}", flush=True)
+    for handler in handlers:
+        await probe(node, handler, version)
+
+
+async def probe(node: Machine, handler: str, version: str) -> None:
+    """Run the store probe under one containerd runtime handler."""
+    await write_json(node, f"/tmp/pod-{handler}.json", pod(f"probe-{handler}"))
 
     # --no-pull, because there is nothing to pull from: if the image is
     # not already here the test should say so rather than time out on a
     # registry it cannot reach.
     out = await node.succeed(
-        "crictl --timeout 5m run --no-pull /tmp/container.json /tmp/pod.json",
+        f"crictl --timeout 5m run --no-pull --runtime {handler}"
+        f" /tmp/container.json /tmp/pod-{handler}.json",
         timeout=400,
     )
     container_id = out.split()[-1]
@@ -178,11 +192,11 @@ async def test(vms: Machines) -> None:
     if f"v{version}" not in logs:
         status = json.loads(await node.succeed(f"crictl inspect {container_id}"))
         raise MachineError(
-            f"[{node.name}] the container did not report Kubernetes v{version}.\n"
+            f"[{node.name}] the {handler} container did not report Kubernetes v{version}.\n"
             f"--- logs ---\n{logs}\n"
             f"--- status ---\n{json.dumps(status.get('status', {}), indent=2)}"
         )
-    print(f"[test] a container of symlinks exec'd out of /nix/store: {logs.strip()}")
+    print(f"[test] {handler}: a container of symlinks exec'd out of /nix/store: {logs.strip()}")
 
 
 run_test(test)

@@ -1162,21 +1162,24 @@ let
     containerd = mkTest {
       name = "containerd";
       script = ./tests/containerd.py;
-      nodes.node = {
-        imports = [ ./modules/k8s.nix ];
-        services.uml-k8s = {
-          enable = true;
-          role = "worker";
-        };
-        boot.uml = {
-          memory = "1024M";
-          diskSize = 2048;
-          lan = {
-            network = "containerd";
-            address = "10.101.0.1/24";
+      nodes.node =
+        { config, ... }:
+        {
+          imports = [ ./modules/k8s.nix ];
+          services.uml-k8s = {
+            enable = true;
+            role = "worker";
+            runtimes = [ "crun" ] ++ lib.optional (config.boot.uml.backend != "uml") "runsc";
+          };
+          boot.uml = {
+            memory = "1024M";
+            diskSize = 2048;
+            lan = {
+              network = "containerd";
+              address = "10.101.0.1/24";
+            };
           };
         };
-      };
       settings = {
         inherit (k8sImages) sandboxImage entrypoints;
         kubernetesVersion = pkgs.kubernetes.version;

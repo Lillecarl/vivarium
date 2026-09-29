@@ -79,6 +79,8 @@ CONTROL_PLANE_TAINT = "node-role.kubernetes.io/control-plane"
 # What a node writes when it declares PersistentVolumes -- see
 # `services.uml-k8s.persistentVolumes` and `provision_storage`.
 STORAGE_MANIFEST = "/etc/kubernetes/uml-storage.yaml"
+# `services.uml-k8s.runtimes` and `provision_runtimes`.
+RUNTIME_MANIFEST = "/etc/kubernetes/uml-runtimes.yaml"
 
 KUBE_PROXY = "--selector k8s-app=kube-proxy"
 KUBE_DNS = "--selector k8s-app=kube-dns"
@@ -573,13 +575,31 @@ async def provision_storage(cp, vms):
     kubeconfig.  Applying the same StorageClass once per node is
     deliberate and costs nothing: `kubectl apply` is idempotent.
     """
+    for name in await _apply_node_manifests(cp, vms, STORAGE_MANIFEST):
+        print(f"[k8s] {name} offers storage", flush=True)
+
+
+async def provision_runtimes(cp, vms):
+    """Apply the RuntimeClasses every node declares, if any does.
+
+    ``services.uml-k8s.runtimes`` writes ``RUNTIME_MANIFEST``, on the same
+    terms as ``provision_storage``.
+    """
+    for name in await _apply_node_manifests(cp, vms, RUNTIME_MANIFEST):
+        print(f"[k8s] {name} offers runtime classes", flush=True)
+
+
+async def _apply_node_manifests(cp, vms, path):
+    """Apply *path* from every node that has it; return those nodes' names."""
+    applied = []
     for name, vm in vms.items():
-        rc, _ = await vm.execute(f"test -e {STORAGE_MANIFEST}")
+        rc, _ = await vm.execute(f"test -e {path}")
         if rc != 0:
             continue
-        manifest = await vm.succeed(f"cat {STORAGE_MANIFEST}")
+        manifest = await vm.succeed(f"cat {path}")
         await cp.succeed(f"kubectl apply --filename - <<'EOF'\n{manifest}\nEOF")
-        print(f"[k8s] {name} offers storage", flush=True)
+        applied.append(name)
+    return applied
 
 
 async def bring_up(
@@ -628,6 +648,7 @@ async def bring_up(
 
     await wait_for_ready_nodes(cp, len(vms))
     await provision_storage(cp, vms)
+    await provision_runtimes(cp, vms)
     for selector in addons:
         await wait_for_pods(cp, selector)
 
@@ -646,6 +667,7 @@ __all__ = [
     "JOIN_TIMEOUT",
     "POLL",
     "READY_TIMEOUT",
+    "RUNTIME_MANIFEST",
     "STORAGE_MANIFEST",
     "UNIT_TIMEOUT",
     "bring_up",
@@ -654,6 +676,7 @@ __all__ = [
     "init_control_plane",
     "join",
     "kubectl",
+    "provision_runtimes",
     "provision_storage",
     "untaint",
     "until",

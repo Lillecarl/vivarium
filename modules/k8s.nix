@@ -489,6 +489,48 @@ let
       };
     }) (lib.range 1 cfg.persistentVolumes);
   };
+
+  /*
+    The OCI runtimes a pod can ask for by `runtimeClassName`, beside runc.
+
+    crun is a second runc: same shim, same spec, another binary. runsc is
+    gVisor, and brings its own shim. Its `systemd-cgroup` matches the
+    `SystemdCgroup` runc gets -- kubelet hands every runtime a cgroup parent
+    in the systemd form, and runsc refuses one it was not told to expect.
+  */
+  runtimeHandlers = {
+    crun = {
+      runtime_type = "io.containerd.runc.v2";
+      options = {
+        BinaryName = lib.getExe pkgs.crun;
+        SystemdCgroup = true;
+      };
+    };
+    runsc = {
+      runtime_type = "io.containerd.runsc.v1";
+      options = {
+        TypeUrl = "io.containerd.runsc.v1.options";
+        ConfigPath = toString (
+          (pkgs.formats.toml { }).generate "runsc.toml" {
+            runsc_config.systemd-cgroup = "true";
+          }
+        );
+      };
+    };
+  };
+
+  # What `bring_up` applies, like `storageManifest`: a RuntimeClass per
+  # handler, named after it.
+  runtimeManifest = yaml.generate "uml-runtimes.yaml" {
+    apiVersion = "v1";
+    kind = "List";
+    items = map (name: {
+      apiVersion = "node.k8s.io/v1";
+      kind = "RuntimeClass";
+      metadata.name = name;
+      handler = name;
+    }) cfg.runtimes;
+  };
 in
 {
   options.services.uml-k8s = {
@@ -565,6 +607,29 @@ in
         A plugin that finds no socket at /var/run/nri waits for one and says
         nothing, so a test whose subject uses NRI has to turn this on, and
         the failure without it looks like a plugin that never ran.
+      '';
+    };
+
+    runtimes = lib.mkOption {
+      type = lib.types.listOf (
+        lib.types.enum [
+          "crun"
+          "runsc"
+        ]
+      );
+      default = [ ];
+      example = [
+        "crun"
+        "runsc"
+      ];
+      description = ''
+        OCI runtimes to offer beside runc, each as a containerd handler and
+        a RuntimeClass of the same name. A pod picks one with
+        `runtimeClassName`; a pod without one still gets runc.
+
+        `runsc` is gVisor, and needs the QEMU backend: under UML its shim
+        panics at start with "None of the address space sizes could be
+        successfully mmaped".
       '';
     };
 
@@ -660,6 +725,10 @@ in
   config = lib.mkIf cfg.enable {
     assertions = [
       {
+        assertion = !(lib.elem "runsc" cfg.runtimes && config.boot.uml.backend == "uml");
+        message = "services.uml-k8s.runtimes: runsc (gVisor) does not start under UML; use the qemu backend.";
+      }
+      {
         assertion = config.boot.uml.lan.address != null;
         message = ''
           services.uml-k8s needs boot.uml.lan.address: every guest shares
@@ -679,7 +748,10 @@ in
         # they are read rather than where they used to be.
         version = lib.mkForce 3;
         plugins."io.containerd.cri.v1.runtime" = {
-          containerd.runtimes.runc.options.SystemdCgroup = true;
+          containerd.runtimes = {
+            runc.options.SystemdCgroup = true;
+          }
+          // lib.getAttrs cfg.runtimes runtimeHandlers;
           # No copy into /opt/cni/bin: nothing writes to these and the
           # store path is already on the node.
           cni.bin_dirs = [ "${pkgs.cni-plugins}/bin" ];
@@ -696,6 +768,9 @@ in
         plugins."io.containerd.nri.v1.nri".disable = !cfg.nri;
       };
     };
+
+    # containerd finds a shim, and the shim its runtime, on PATH.
+    systemd.services.containerd.path = lib.optional (lib.elem "runsc" cfg.runtimes) pkgs.gvisor;
 
     # ── the images, before anything wants them ─────────────────────
 
@@ -888,6 +963,10 @@ in
       # file and the runner applies nothing, so storage is one knob and not
       # two -- unlike `skipAddons`, which a test has to repeat in `addons`.
       "kubernetes/uml-storage.yaml".source = storageManifest;
+    }
+    // lib.optionalAttrs (cfg.runtimes != [ ]) {
+      # Where `provision_runtimes` looks, on the same terms.
+      "kubernetes/uml-runtimes.yaml".source = runtimeManifest;
     }
     // {
       # What every pod gets as its /etc/resolv.conf, and what CoreDNS
