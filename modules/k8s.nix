@@ -824,6 +824,20 @@ in
       ++ lib.optional (lib.elem "kata" cfg.runtimes) pkgs.kata-runtime
     );
 
+    /*
+      containers/storage bind-mounts its overlay home onto itself as
+      private. A kata shim copies the mount table when it starts, so every
+      rootfs CRI-O mounts after that never reaches the shim: it sees an
+      empty `merged`, creates mount points in it, and shares an empty rootfs
+      into the VM. Measured with kata 3.32: "the file /bin/sh was not
+      found", then CRI-O retrying "replacing mount point ... merged:
+      directory not empty" for ever, and the agent dead after a container
+      exits. containerd has no such bind; its shim mounts the rootfs.
+    */
+    virtualisation.containers.storage.settings.storage.options.overlay =
+      lib.mkIf (cfg.cri == "crio" && lib.elem "kata" cfg.runtimes)
+        { skip_mount_home = "true"; };
+
     virtualisation.cri-o = lib.mkIf (cfg.cri == "crio") {
       enable = true;
       pauseImage = images.sandboxImage;
