@@ -831,4 +831,4 @@ async def _shutdown(machine: Machine) -> None:
     try:
         await machine.shutdown()
     except Exception as error:  # noqa: BLE001
-        print(f"[uml] {machine.name} did not shut down cleanly: {error}", flush=True)
+        print(f"[vivarium] {machine.name} did not shut down cleanly: {error}", flush=True)

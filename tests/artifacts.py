@@ -15,7 +15,7 @@ BLOB = 1 << 20
 """A megabyte: hostfs and virtiofs are different code paths for a write
 that does not fit in one page."""
 
-AGENT = "uml-agent"
+AGENT = "vivarium-agent"
 """In the agent's own command line -- see modules/guest.nix."""
 
 

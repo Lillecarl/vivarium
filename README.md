@@ -4,7 +4,7 @@ NixOS integration tests, as an alternative to `nixosTest`. A guest is an
 ordinary NixOS configuration, a test is a Python coroutine over the guests,
 and the machine underneath is a choice.
 
-The default is [User-Mode Linux][uml], which compiles the kernel as an
+The default is [User-Mode Linux][vivarium], which compiles the kernel as an
 ordinary Linux program. A guest is then a process: no KVM, no root, no tap
 devices, no `/dev/net/tun`. Tests run inside a Nix build sandbox, in a
 container, or on a builder with no virtualisation to offer.
@@ -138,13 +138,13 @@ by running a subset.
 
 ```nix
 knobs.selection = {
-  env = "UML_SELECTION";
+  env = "VIVARIUM_SELECTION";
   default = "every-case";
 };
 ```
 
 ```console
-$ UML_SELECTION=just-mounts nix run --file . mine.run -- --out ./out
+$ VIVARIUM_SELECTION=just-mounts nix run --file . mine.run -- --out ./out
 ```
 
 A phase reads `vms.knobs["selection"]` and passes it where it wants —
@@ -286,7 +286,7 @@ commands work before networking exists and inside a sandbox. `vivarium_runner.ar
 speaks rpyc's wire format (brine for values, vinegar for exceptions) over
 asyncio, with one handler that calls a method by name — so `await
 vm.succeed("...")` is a single round trip. The guest half is the
-`uml-agent` systemd unit.
+`vivarium-agent` systemd unit.
 
 **Root image.** Almost empty: busybox, an `/init`, and a symlink to the
 system's `init`. `/init` mounts the host's `/nix` over hostfs with a
@@ -471,10 +471,10 @@ $ jq '{total_seconds, boot_seconds, waiting_seconds}' result/report.json
 { "total_seconds": 9.106, "boot_seconds": 6.726, "waiting_seconds": 0.04 }
 ```
 
-A run outside the sandbox records when `UML_TEST_REPORT` names a file:
+A run outside the sandbox records when `VIVARIUM_TEST_REPORT` names a file:
 
 ```console
-$ UML_TEST_REPORT=/tmp/run.json nix run --file . lan.run
+$ VIVARIUM_TEST_REPORT=/tmp/run.json nix run --file . lan.run
 ```
 
 Either way the file holds the per-machine boot time, every round trip to a
@@ -524,13 +524,13 @@ a suite, a longer deadline, a different image tag. `mkTest` takes
 impure = mkTest {
   name = "impure";
   script = ./tests/impure.py;
-  impurities = [ "UML_TEST_IMPURITY" ];
+  impurities = [ "VIVARIUM_TEST_IMPURITY" ];
   nodes.one = { };
 };
 ```
 
 ```console
-$ UML_TEST_IMPURITY=anything nix run --file . impure.run
+$ VIVARIUM_TEST_IMPURITY=anything nix run --file . impure.run
 ```
 
 The script reads them as `vms.env`, and passes what it chooses into a
@@ -591,7 +591,7 @@ $ nix run --file . store.run        # and store.qemu.run
 
 **Only outside the build sandbox, and it cannot be otherwise.** A sandbox
 `/nix` holds `store` and nothing else, so there is no host database to
-read. `uml-host-store.service` says that on the console rather than
+read. `vivarium-host-store.service` says that on the console rather than
 letting Nix report a lock file it cannot open, and `store` is not in
 `checks` because CI would only ever see that message.
 
@@ -672,7 +672,7 @@ on one worker reaching a Service backed by a pod on the other. That last
 step is the point — it only passes if the CNI bridge, the routes between
 the nodes, kube-proxy's iptables rules and cluster DNS all work.
 
-Then storage. `services.uml-k8s.persistentVolumes` gives a node that many
+Then storage. `services.vivarium-k8s.persistentVolumes` gives a node that many
 hostPath volumes and the cluster a default StorageClass named `standard`,
 which is what a chart that names no class needs. The test writes from one
 pod and reads from the next, because a volume that kept nothing would pass
@@ -796,4 +796,4 @@ only runs outside the sandbox.
   *runs* started at the same instant outside a sandbox can still land on
   the same address; within a run they cannot.
 
-[uml]: https://docs.kernel.org/virt/uml/user_mode_linux_howto_v2.html
+[vivarium]: https://docs.kernel.org/virt/uml/user_mode_linux_howto_v2.html

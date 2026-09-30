@@ -1,6 +1,6 @@
 """The in-guest half of the control channel.
 
-Started by the ``uml-agent`` systemd unit, this serves arpyc on a serial
+Started by the ``vivarium-agent`` systemd unit, this serves arpyc on a serial
 line -- the other end of which is a socketpair held by the host runner.
 Commands therefore work before (and without) any guest networking,
 including inside a Nix build sandbox.
@@ -21,13 +21,13 @@ import subprocess
 
 from .arpyc import Service, listen
 
-AGENT_READY = "uml-agent: ready"
+AGENT_READY = "vivarium-agent: ready"
 """Printed on the guest console once the agent is reading :data:`TTY`;
 the host waits for this line to know a guest has finished booting, and
 connects the moment it sees it.  Nothing may be printed before the line
 is set up, or the first request races the setup and is lost."""
 
-TTY = os.environ.get("UML_AGENT_DEVICE", "/dev/ttyS0")
+TTY = os.environ.get("VIVARIUM_AGENT_DEVICE", "/dev/ttyS0")
 """Where the host is listening.  ttyS0 under UML.  Under QEMU the console
 takes ttyS0 -- a stock kernel prints there from its first line, before any
 virtio driver exists -- and the agent gets hvc0 instead."""
@@ -55,7 +55,7 @@ class Agent(Service):
     """What the host may ask this guest to do."""
 
     def on_disconnect(self, conn) -> None:
-        print("uml-agent: host disconnected", flush=True)
+        print("vivarium-agent: host disconnected", flush=True)
 
     def exposed_run(
         self,

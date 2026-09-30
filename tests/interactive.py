@@ -13,7 +13,7 @@ from pathlib import Path
 
 INPUT = """\
 print("states:", sorted(set(map(str, session.state.values()))))
-print("merged:", (await one.succeed("cat /etc/uml-interactive")).strip())
+print("merged:", (await one.succeed("cat /etc/vivarium-interactive")).strip())
 print("hello:", await run("hello"))
 """
 

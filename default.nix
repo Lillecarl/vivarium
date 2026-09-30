@@ -28,8 +28,8 @@
 let
   inherit (pkgs) lib;
 
-  uml = import ./lib.nix { inherit pkgs lib; };
-  inherit (uml)
+  vivarium = import ./lib.nix { inherit pkgs lib; };
+  inherit (vivarium)
     mkNode
     mkTest
     fromNixosTest
@@ -79,7 +79,7 @@ let
       };
       nodes.node = {
         imports = [ ./modules/k8s.nix ];
-        services.uml-k8s = {
+        services.vivarium-k8s = {
           enable = true;
           role = "worker";
           inherit cri;
@@ -115,7 +115,7 @@ let
     let
       node = index: role: {
         imports = [ ./modules/k8s.nix ];
-        services.uml-k8s = {
+        services.vivarium-k8s = {
           enable = true;
           inherit role;
           # One each, so the claim tests/k8s.py makes has somewhere to
@@ -181,7 +181,7 @@ let
     # is the half of the guest's store that does not come from the host's
     # database -- and cannot, because a path this fresh is still in the
     # host's write-ahead log.
-    settings.probe = "${pkgs.runCommand "uml-store-probe" { } "echo settings > $out"}";
+    settings.probe = "${pkgs.runCommand "vivarium-store-probe" { } "echo settings > $out"}";
     nodes.node =
       { config, ... }:
       {
@@ -218,7 +218,7 @@ let
     };
     nodes.cp = {
       imports = [ ./modules/k8s.nix ];
-      services.uml-k8s = {
+      services.vivarium-k8s = {
         enable = true;
         role = "control-plane";
         images = "pull";
@@ -379,7 +379,7 @@ let
           };
         };
       in
-      pkgs.runCommand "uml-check-phase-rules"
+      pkgs.runCommand "vivarium-check-phase-rules"
         {
           nativeBuildInputs = [ pkgs.jq ];
           passthru.session = run;
@@ -437,7 +437,7 @@ let
       name = "knobs";
       nodes.one = { };
       knobs.selection = {
-        env = "UML_SELECTION";
+        env = "VIVARIUM_SELECTION";
         default = "every-case";
         description = "Which cases to run; the default is all of them.";
       };
@@ -486,7 +486,7 @@ let
           };
         };
       in
-      pkgs.runCommand "uml-check-only"
+      pkgs.runCommand "vivarium-check-only"
         {
           nativeBuildInputs = [ pkgs.jq ];
           passthru.session = run;
@@ -561,7 +561,7 @@ let
           };
         };
       in
-      pkgs.runCommand "uml-check-recipes"
+      pkgs.runCommand "vivarium-check-recipes"
         {
           nativeBuildInputs = [ pkgs.jq ];
           passthru.session = run;
@@ -623,7 +623,7 @@ let
           };
         };
       in
-      pkgs.runCommand "uml-check-stream"
+      pkgs.runCommand "vivarium-check-stream"
         {
           nativeBuildInputs = [ pkgs.jq ];
           passthru.session = run;
@@ -695,7 +695,7 @@ let
           };
         };
       in
-      pkgs.runCommand "uml-check-pytest-phase"
+      pkgs.runCommand "vivarium-check-pytest-phase"
         {
           nativeBuildInputs = [
             pkgs.jq
@@ -740,7 +740,7 @@ let
             $a/events.jsonl > /dev/null || fail "a line logged as a test returned was lost"
           echo "ok: a line logged on the way out still reached the phase"
 
-          if jq -e 'select(.kind == "journal" and .data.identifier == "uml-settle")' $a/events.jsonl > /dev/null; then
+          if jq -e 'select(.kind == "journal" and .data.identifier == "vivarium-settle")' $a/events.jsonl > /dev/null; then
             fail "the settle marker leaked into the events"
           fi
           echo "ok: and the runner's own marker stayed out of them"
@@ -770,8 +770,8 @@ let
     # Can this sandbox run a container guest? Seconds, and every missing
     # piece named with its fix. `-tun` also asks for a tap device, which a
     # LAN needs: /dev/net in `extra-sandbox-paths`.
-    container-probe = uml.containerProbe { };
-    container-probe-tun = uml.containerProbe { tun = true; };
+    container-probe = vivarium.containerProbe { };
+    container-probe-tun = vivarium.containerProbe { tun = true; };
 
     # Two containers and a UML guest on one segment. By hand, as above.
     container-lan = mkTest {
@@ -888,7 +888,7 @@ let
           };
         };
       in
-      pkgs.runCommand "uml-check-parallel"
+      pkgs.runCommand "vivarium-check-parallel"
         {
           nativeBuildInputs = [ pkgs.jq ];
           passthru.session = run;
@@ -939,7 +939,7 @@ let
     */
     peers = mkTest {
       name = "peers";
-      defaults.environment.etc."uml-defaults".text = "from-defaults\n";
+      defaults.environment.etc."vivarium-defaults".text = "from-defaults\n";
       nodes.server.vivarium.lan = {
         network = "peers";
         address = "192.168.99.2/24";
@@ -986,14 +986,14 @@ let
         run = mkTest {
           name = "interactive";
           nodes.one = { };
-          interactive.nodes.one.environment.etc."uml-interactive".text = "yes\n";
+          interactive.nodes.one.environment.etc."vivarium-interactive".text = "yes\n";
           phases.hello = {
             script = ./tests/phases/hello.py;
             after = [ "boot" ];
           };
         };
       in
-      pkgs.runCommand "uml-check-interactive" { passthru.session = run; } ''
+      pkgs.runCommand "vivarium-check-interactive" { passthru.session = run; } ''
         export HOME=$TMPDIR
         ${pkgs.python3.interpreter} ${./tests/interactive.py} ${lib.getExe run.driverInteractive} "$TMPDIR"
         touch $out
@@ -1011,7 +1011,7 @@ let
           };
         };
       in
-      pkgs.runCommand "uml-check-cleanup" { passthru.session = run; } ''
+      pkgs.runCommand "vivarium-check-cleanup" { passthru.session = run; } ''
         ${pkgs.python3.interpreter} ${./tests/cleanup.py} ${lib.getExe session} ${run.spec} "$TMPDIR"
         touch $out
       '';
@@ -1079,7 +1079,7 @@ let
           };
         };
       in
-      pkgs.runCommand "uml-check-guest-suites"
+      pkgs.runCommand "vivarium-check-guest-suites"
         {
           nativeBuildInputs = [
             pkgs.jq
@@ -1127,7 +1127,7 @@ let
           nodes.one = { };
         };
       in
-      pkgs.runCommand "uml-check-kernel-override"
+      pkgs.runCommand "vivarium-check-kernel-override"
         {
           nativeBuildInputs = [ pkgs.jq ];
           passthru.session = run;
@@ -1160,8 +1160,8 @@ let
       The loop this is for: changing a phase costs an evaluation and a
       store path, and changing a guest costs an image, so the fast way is
       neither -- pause with the guests up and send Python in. Driven with
-      the real binaries, the way a person or an agent drives them: `uml
-      run --break` in the background, `vivarium ctl` against its socket.
+      the real binaries, the way a person or an agent drives them:
+      `vivarium run --break` in the background, `vivarium ctl` against its socket.
 
       The file injected is written here, in the build directory, and was
       never in the store: that is the point of `inject`.
@@ -1177,7 +1177,7 @@ let
           };
         };
       in
-      pkgs.runCommand "uml-check-breakpoint"
+      pkgs.runCommand "vivarium-check-breakpoint"
         {
           nativeBuildInputs = [ pkgs.jq ];
           passthru.session = run;
@@ -1337,7 +1337,7 @@ let
         { config, ... }:
         {
           imports = [ ./modules/k8s.nix ];
-          services.uml-k8s = {
+          services.vivarium-k8s = {
             enable = true;
             role = "worker";
             runtimes = [ "crun" ] ++ lib.optional (config.vivarium.backend != "uml") "runsc";
@@ -1378,7 +1378,7 @@ let
         { config, ... }:
         {
           imports = [ ./modules/k8s.nix ];
-          services.uml-k8s = {
+          services.vivarium-k8s = {
             enable = true;
             role = "worker";
             cri = "crio";
@@ -1412,7 +1412,7 @@ let
       };
       nodes = k8sNodes;
       settings = {
-        inherit (k8sConfig.services.uml-k8s) podSubnet workloadImage;
+        inherit (k8sConfig.services.vivarium-k8s) podSubnet workloadImage;
         kubernetesVersion = pkgs.kubernetes.version;
       };
     };
@@ -1437,7 +1437,7 @@ let
 
     # The scripts in tests/, against the library they drive. Also the
     # check that `typeCheck` itself works.
-    check-scripts = uml.typeCheck {
+    check-scripts = vivarium.typeCheck {
       name = "own-scripts";
       # `.py` only: a run outside the sandbox leaves `__pycache__` beside
       # them, and pyright has nothing to say about a `.pyc`.
@@ -1458,7 +1458,7 @@ tests
   lib = { inherit mkNode mkTest fromNixosTest runner session typeCheck; };
 
   inherit demo store k8s-pull uplink incr;
-  inherit (demo.config.system.build) umlRunner umlRootImage toplevel;
+  inherit (demo.config.system.build) vivariumRunner vivariumRootImage toplevel;
 
   # The slowest thing in the repository and the same for every guest, so
   # CI builds it once on its own and lets the cache hand it to the test
@@ -1500,8 +1500,8 @@ tests
   */
 
   # A guest to poke at by hand, running one program.
-  speedtest = pkgs.writeShellScriptBin "uml-speedtest" ''
-    exec ${demo.config.system.build.umlRunner}/bin/vivarium-run --command speedtest-cli "$@"
+  speedtest = pkgs.writeShellScriptBin "vivarium-speedtest" ''
+    exec ${demo.config.system.build.vivariumRunner}/bin/vivarium-run --command speedtest-cli "$@"
   '';
 
   # Regenerate .github/workflows from ci/workflows.nix.
@@ -1531,7 +1531,7 @@ tests
     let
       vivarium-eval = import ./pkgs/vivarium-eval { inherit pkgs sources; };
     in
-    pkgs.runCommand "uml-check-mcp" { nativeBuildInputs = [ pkgs.python3 ]; } ''
+    pkgs.runCommand "vivarium-check-mcp" { nativeBuildInputs = [ pkgs.python3 ]; } ''
       export HOME="$TMPDIR"
       python3 ${./tests/mcp_driver.py} ${vivarium-eval}/bin/vivarium-mcp ${tests.pytest-phase.session.spec}
       touch $out

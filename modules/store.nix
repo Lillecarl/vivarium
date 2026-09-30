@@ -72,7 +72,7 @@ in
     # build time, where `/host` does not exist.
     nix.checkConfig = false;
 
-    systemd.services.uml-host-store = {
+    systemd.services.vivarium-host-store = {
       description = "Check the host's Nix database is readable";
       wantedBy = [ "multi-user.target" ];
       before = [ "multi-user.target" ];

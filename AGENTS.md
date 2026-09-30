@@ -51,7 +51,7 @@ and a store path each time, and a guest change is a new image. Pause and
 send Python in:
 
 ```sh
-uml-run-mine --out ./o --break check &        # or --break-on-failure
+vivarium-run-mine --out ./o --break check &        # or --break-on-failure
 uml ctl --out ./o state
 uml ctl --out ./o exec 'await one.succeed("systemctl --failed")'
 uml ctl --out ./o exec - < snippet.py         # top-level await; names persist
@@ -399,7 +399,7 @@ Every run records itself.
 
 A check writes `report.json` into its own output; that is why a test's
 output is a directory. A run outside the sandbox writes one when
-`UML_TEST_REPORT` names a file. Both write on failure too.
+`VIVARIUM_TEST_REPORT` names a file. Both write on failure too.
 
 ```sh
 jq '{total_seconds, boot_seconds, waiting_seconds}' result/report.json
@@ -518,7 +518,7 @@ grep -E '^CONFIG_(NF_|IP_NF_|VETH|BRIDGE)' \
 
 - A failure inside the guest agent shows up on the host as an exception
   from `vm.execute`, but the guest-side traceback is only in the guest
-  journal — `await vm.journal("uml-agent")`.
+  journal — `await vm.journal("vivarium-agent")`.
 - `vivarium.memory` below ~192M gets the agent OOM-killed partway
   through a test, which looks like a hang.
 - `vivarium.memory` is a ceiling, not a cost: guest memory is a sparse

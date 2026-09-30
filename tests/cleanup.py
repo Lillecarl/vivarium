@@ -5,7 +5,7 @@ phase has started, and looks for what is left: a run root, or a process
 by its exact name. SIGKILL: the cleaner removes the root. SIGTERM: the
 run exits 143 after the guest has powered itself off.
 
-    cleanup UML SPEC WORKDIR
+    cleanup VIVARIUM SPEC WORKDIR
 """
 
 import os
@@ -15,6 +15,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from collections.abc import Callable
 from pathlib import Path
 
 LEFT_BEHIND = ("linux", "uml-passt-bridge", "passt")
@@ -23,7 +24,7 @@ LEFT_BEHIND = ("linux", "uml-passt-bridge", "passt")
 
 def roots() -> list[Path]:
     places = {Path("/tmp"), Path(tempfile.gettempdir())}
-    return sorted(root for place in places for root in place.glob("uml-run-*"))
+    return sorted(root for place in places for root in place.glob("vivarium-run-*"))
 
 
 def running(names: tuple[str, ...]) -> list[str]:
@@ -38,7 +39,7 @@ def running(names: tuple[str, ...]) -> list[str]:
     return found
 
 
-def until(check, seconds: float, step: float = 0.1) -> bool:
+def until(check: Callable[[], bool], seconds: float, step: float = 0.1) -> bool:
     deadline = time.monotonic() + seconds
     while time.monotonic() < deadline:
         if check():
@@ -47,14 +48,14 @@ def until(check, seconds: float, step: float = 0.1) -> bool:
     return check()
 
 
-def case(uml: str, spec: str, work: Path, sig: signal.Signals, *, keep: bool = False) -> int:
+def case(vivarium: str, spec: str, work: Path, sig: signal.Signals, *, keep: bool = False) -> int:
     name = f"{sig.name}{'-keep' if keep else ''}"
     out = work / f"run-{name}"
     log = work / f"run-{name}.log"
-    env = {**os.environ, **({"UML_KEEP": "1"} if keep else {})}
+    env = {**os.environ, **({"VIVARIUM_KEEP": "1"} if keep else {})}
     with log.open("w") as sink:
         runner = subprocess.Popen(
-            [uml, "run", "--spec", spec, "--out", str(out)],
+            [vivarium, "run", "--spec", spec, "--out", str(out)],
             stdout=sink,
             stderr=subprocess.STDOUT,
             env=env,
@@ -88,11 +89,11 @@ def case(uml: str, spec: str, work: Path, sig: signal.Signals, *, keep: bool = F
 
 
 def main() -> None:
-    uml, spec, work = sys.argv[1], sys.argv[2], Path(sys.argv[3])
+    vivarium, spec, work = sys.argv[1], sys.argv[2], Path(sys.argv[3])
     os.environ.setdefault("HOME", str(work))
-    case(uml, spec, work, signal.SIGKILL, keep=True)
-    case(uml, spec, work, signal.SIGKILL)
-    status = case(uml, spec, work, signal.SIGTERM)
+    case(vivarium, spec, work, signal.SIGKILL, keep=True)
+    case(vivarium, spec, work, signal.SIGKILL)
+    status = case(vivarium, spec, work, signal.SIGTERM)
     # The runner catches SIGTERM and exits 128 + 15. Uncaught, Popen
     # would report -15.
     if status != 128 + signal.SIGTERM:

@@ -242,7 +242,7 @@ in
         passes the host's through, which needs nesting on the host
         (`/sys/module/kvm_{intel,amd}/parameters/nested`), and the guest
         loads KVM for that vendor. Without nesting on the host, the
-        guest's `uml-kvm` unit fails with the reason.
+        guest's `vivarium-kvm` unit fails with the reason.
       '';
     };
 
@@ -518,7 +518,7 @@ in
     # The UML kernel is built from the same source as the guest's own
     # kernel package, so the two always agree on module versions.
     system.build = {
-      umlRunnerPackage = pkgs.callPackage ../pkgs/vivarium-runner { };
+      vivariumRunnerPackage = pkgs.callPackage ../pkgs/vivarium-runner { };
 
       /*
         What the guest tells Nix about the store it can see -- see
@@ -534,10 +534,10 @@ in
         path Nix has been told about and cannot open is worse than one it
         does not know.
 
-        Nothing reads this at run time; `umlNixDatabase` below turns it
+        Nothing reads this at run time; `vivariumNixDatabase` below turns it
         into the database the guest boots with.
       */
-      umlNixRegistration = pkgs.closureInfo {
+      vivariumNixRegistration = pkgs.closureInfo {
         rootPaths = [ config.system.build.toplevel ] ++ config.vivarium.nixDatabase.extraRoots;
       };
 
@@ -569,7 +569,7 @@ in
         wrote is what makes the output the same for the same closure,
         whatever order the inserts happened in.
       */
-      umlNixDatabase = pkgs.runCommand "uml-nix-database" {
+      vivariumNixDatabase = pkgs.runCommand "vivarium-nix-database" {
         nativeBuildInputs = [
           config.nix.package
           pkgs.sqlite
@@ -577,7 +577,7 @@ in
       } ''
         export USER=nobody
         export NIX_REMOTE="local?root=$PWD"
-        nix-store --load-db < ${config.system.build.umlNixRegistration}/registration
+        nix-store --load-db < ${config.system.build.vivariumNixRegistration}/registration
 
         # A build gets no clock, so give every path the same time rather
         # than whatever this one happened to run at.

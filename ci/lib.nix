@@ -49,7 +49,7 @@ rec {
       /*
         Cache what the tests are built out of, not whether they passed.
 
-        A `uml-test-*` output is an empty file whose existence means
+        A `vivarium-test-*` output is an empty file whose existence means
         "this booted some guests and they behaved".  Push that and the
         next run with the same inputs substitutes it instead of booting
         anything -- so re-running a commit, which is the one thing you
@@ -64,7 +64,7 @@ rec {
         the ones worth paying to repeat.  The kernel -- the only build
         here that costs real time -- is unaffected.
       */
-      pushFilter = "(-uml-test-)";
+      pushFilter = "(-vivarium-test-)";
     };
   };
 

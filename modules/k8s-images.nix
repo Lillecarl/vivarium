@@ -182,7 +182,7 @@ let
   # and brings httpd, wget and nslookup, which between them are enough to
   # tell whether pods, Services and cluster DNS work.
   workload = dockerTools.buildLayeredImage {
-    name = "uml.test/busybox";
+    name = "vivarium.test/busybox";
     tag = "1";
     # A copy rather than a symlink: this one owes nothing to /nix/store,
     # so it also works as a check that a plain image still runs.
@@ -223,7 +223,7 @@ in
 
   # What a test should ask to be scheduled.  There is no registry, so
   # anything using this has to say imagePullPolicy: Never.
-  workloadImage = "uml.test/busybox:1";
+  workloadImage = "vivarium.test/busybox:1";
 
   # containerd carries its own default for this, which tracks its own
   # release rather than kubeadm's -- so it is worth saying out loud.

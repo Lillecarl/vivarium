@@ -8,8 +8,8 @@ inside it: nanopynix evaluates `--file`, selects the attribute, builds
 its `.run` (which pulls in the spec and the phase type check) and execs
 it. There is no `nix build` first and no store path to paste.
 
-**A separate package from `uml`, on purpose.** nanopynix links Nix, and
-`uml` is what every sandboxed check runs. A sandboxed check must not
+**A separate package from `vivarium`, on purpose.** nanopynix links Nix, and
+`vivarium` is what every sandboxed check runs. A sandboxed check must not
 evaluate -- everything is decided by the time it runs -- so it never
 needs this, and a consumer of `mkTest` never builds it.
 
@@ -38,7 +38,7 @@ class Request:
     file: Path
     attr: list[str]
     rest: list[str]
-    """Everything else, for `uml` itself: its options, and `--` with
+    """Everything else, for `vivarium` itself: its options, and `--` with
     pytest's arguments after it."""
 
 
@@ -58,9 +58,9 @@ def entry(file: Path) -> Path:
 
 
 def parse(argv: list[str]) -> Request:
-    """Our two options, and the rest untouched for `uml`.
+    """Our two options, and the rest untouched for `vivarium`.
 
-    `--` is found by hand: argparse drops it, and `uml` needs it to know
+    `--` is found by hand: argparse drops it, and `vivarium` needs it to know
     where pytest's arguments begin.
     """
     head, tail = argv, []
@@ -70,7 +70,7 @@ def parse(argv: list[str]) -> Request:
     parser = argparse.ArgumentParser(
         prog="vivarium-eval",
         description="Evaluate a run, build it and run it",
-        epilog="Anything else goes to `uml`: `vivarium-eval run x --out o -v -- -k name`.",
+        epilog="Anything else goes to `vivarium`: `vivarium-eval run x --out o -v -- -k name`.",
     )
     parser.add_argument("command", choices=["run", "phases"])
     parser.add_argument("attr", help="the attribute to run, such as `lan` or `lan.qemu`")
@@ -93,8 +93,8 @@ async def resolve(file: Path, attr: list[str], command: str) -> str:
     """Evaluate, build the attribute's `.run` or `.phases`, and return
     the program in it.
 
-    That program, and not this package's `uml`, is what runs: it carries
-    the `uml` of the library that was evaluated, which knows every field
+    That program, and not this package's `vivarium`, is what runs: it carries
+    the `vivarium` of the library that was evaluated, which knows every field
     of the spec. Building `.run` also runs the type check of every phase
     script, exactly as `nix run --file . <attr>.run` does.
     """
@@ -140,7 +140,7 @@ def explain(error: str) -> str:
 
 def say(text: str) -> None:
     # Before a session exists, so there is no `emit` to go through yet.
-    print(f"[uml] {text}", file=sys.stderr, flush=True)
+    print(f"[vivarium] {text}", file=sys.stderr, flush=True)
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -154,7 +154,7 @@ def main(argv: list[str] | None = None) -> None:
         raise SystemExit(1) from None
     say(f"evaluated and built in {time.monotonic() - started:.1f}s")
     # Exec'd, not called: the program is the one the evaluated library
-    # built, with its own `uml`. Calling this package's `uml` instead ran
+    # built, with its own `vivarium`. Calling this package's `vivarium` instead ran
     # a spec from a newer lib.nix with an older runner, and a phase failed
     # on an import the newer field existed to make work.
     os.execv(program, [program, *request.rest])

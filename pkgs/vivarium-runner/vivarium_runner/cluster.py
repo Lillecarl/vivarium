@@ -19,7 +19,7 @@ and a caller outside this repository can build its own:
 
 Everything a caller is likely to need is a coroutine over ``Machine``
 objects, so nothing here assumes the guests came from this repository's
-``flake.nix`` -- only that they run ``services.uml-k8s``.
+``flake.nix`` -- only that they run ``services.vivarium-k8s``.
 """
 
 import asyncio
@@ -77,10 +77,10 @@ CONTROL_PLANE_TAINT = "node-role.kubernetes.io/control-plane"
 # one-CPU guest and a great deal of log noise, because a sandboxed CoreDNS
 # spends its life timing out against an upstream resolver it cannot reach.
 # What a node writes when it declares PersistentVolumes -- see
-# `services.uml-k8s.persistentVolumes` and `provision_storage`.
-STORAGE_MANIFEST = "/etc/kubernetes/uml-storage.yaml"
-# `services.uml-k8s.runtimes` and `provision_runtimes`.
-RUNTIME_MANIFEST = "/etc/kubernetes/uml-runtimes.yaml"
+# `services.vivarium-k8s.persistentVolumes` and `provision_storage`.
+STORAGE_MANIFEST = "/etc/kubernetes/vivarium-storage.yaml"
+# `services.vivarium-k8s.runtimes` and `provision_runtimes`.
+RUNTIME_MANIFEST = "/etc/kubernetes/vivarium-runtimes.yaml"
 
 KUBE_PROXY = "--selector k8s-app=kube-proxy"
 KUBE_DNS = "--selector k8s-app=kube-dns"
@@ -240,9 +240,9 @@ async def diagnose(vm):
             " tail -n 15 -v /var/log/pods/kube-system_*/*/*.log 2>&1 | tail -n 150"
         )
     )[1]
-    # containerd or crio: the unit `services.uml-k8s.cri` put behind the target.
+    # containerd or crio: the unit `services.vivarium-k8s.cri` put behind the target.
     runtime = (
-        await vm.execute("systemctl show --property Requires --value uml-k8s-cri.target")
+        await vm.execute("systemctl show --property Requires --value vivarium-k8s-cri.target")
     )[1].split() or ["containerd.service"]
     return (
         f"--- [{vm.name}] addresses and routes ---\n"
@@ -370,7 +370,7 @@ async def join(cp, workers):
 
     The token and the CA hash come from kubeadm rather than being read
     out of /etc/kubernetes, but the join itself does not use the command
-    line kubeadm prints -- see `uml-k8s-join`, which wraps them in a
+    line kubeadm prints -- see `vivarium-k8s-join`, which wraps them in a
     configuration carrying this cluster's timeouts.
 
     --config is not optional here, even though the cluster already
@@ -411,7 +411,7 @@ async def join(cp, workers):
         log = "/tmp/kubeadm-join.log"
         try:
             rc, out = await worker.execute(
-                f"uml-k8s-join {endpoint} {token} {digest}"
+                f"vivarium-k8s-join {endpoint} {token} {digest}"
                 f" > {log} 2>&1; rc=$?; cat {log}; exit $rc",
                 timeout=JOIN_TIMEOUT,
                 label="kubeadm join",
@@ -474,7 +474,7 @@ async def wire_pod_network(cp, vms):
         )
 
     async def one(vm):
-        await vm.succeed(f"uml-k8s-cni {cidrs[vm.name]}")
+        await vm.succeed(f"vivarium-k8s-cni {cidrs[vm.name]}")
         for peer in vms.values():
             if peer.name != vm.name:
                 await vm.succeed(
@@ -570,7 +570,7 @@ async def provision_storage(cp, vms):
     """Apply the PersistentVolumes every node declares, if any does.
 
     A node writes ``STORAGE_MANIFEST`` when
-    ``services.uml-k8s.persistentVolumes`` is above zero, and nothing when
+    ``services.vivarium-k8s.persistentVolumes`` is above zero, and nothing when
     it is not -- so this asks the guests rather than taking an argument,
     and a test that wants storage says so in one place.
 
@@ -586,7 +586,7 @@ async def provision_storage(cp, vms):
 async def provision_runtimes(cp, vms):
     """Apply the RuntimeClasses every node declares, if any does.
 
-    ``services.uml-k8s.runtimes`` writes ``RUNTIME_MANIFEST``, on the same
+    ``services.vivarium-k8s.runtimes`` writes ``RUNTIME_MANIFEST``, on the same
     terms as ``provision_storage``.
     """
     for name in await _apply_node_manifests(cp, vms, RUNTIME_MANIFEST):
@@ -613,7 +613,7 @@ async def bring_up(
 
     Returns the control plane machine.
 
-    *nix_images* says which `services.uml-k8s.images` the guests were
+    *nix_images* says which `services.vivarium-k8s.images` the guests were
     built with, and the two must agree.  Under `"nix"` the node imports
     every image at boot and each one is symlinks into `/nix/store`, so
     this waits for that import and gives kube-proxy the store.  Under
@@ -628,7 +628,7 @@ async def bring_up(
 
     *addons* are the addon pods to wait for, as label selectors.  Pass `()`
     for a cluster that runs neither -- see `DEFAULT_ADDONS`.  It has to
-    agree with `services.uml-k8s.skipAddons`, which decides what kubeadm
+    agree with `services.vivarium-k8s.skipAddons`, which decides what kubeadm
     installs in the first place: waiting for a pod nobody created hangs
     until the deadline, and not waiting for one that exists lets a test
     start before cluster DNS answers.
@@ -639,7 +639,7 @@ async def bring_up(
         schedulable = not workers
 
     for vm in vms.values():
-        await vm.wait_for_unit("uml-k8s-cri.target", timeout=UNIT_TIMEOUT)
+        await vm.wait_for_unit("vivarium-k8s-cri.target", timeout=UNIT_TIMEOUT)
     if nix_images:
         await wait_for_images(vms)
     else:

@@ -6,7 +6,7 @@ operations and a query over `events.jsonl`. When the run pauses, fails a
 phase or finishes, a `notifications/claude/channel` event is pushed, so
 Claude Code hears about it without polling:
 
-    <channel source="vivarium" run="uml-pytest-x1" event="paused" reason="after cases failed">...
+    <channel source="vivarium" run="vivarium-pytest-x1" event="paused" reason="after cases failed">...
 
 **The run is a child process, never this one.** MCP's stdio transport
 is this process's stdout, and a session writes to stdout -- the terminal
@@ -174,7 +174,7 @@ def run_argv(
     kernel: str | None = None,
 ) -> list[str]:
     """The child's command line. By attribute through `vivarium-eval`, which
-    evaluates first; by spec straight to the `uml` the spec names."""
+    evaluates first; by spec straight to the `vivarium` the spec names."""
     if (attr is None) == (spec is None):
         raise ValueError("give exactly one of attr and spec")
     bin_dir = Path(sys.executable).parent
@@ -182,7 +182,7 @@ def run_argv(
         split_attr(attr)
         head = [str(bin_dir / "vivarium-eval"), "run", attr, "--file", file]
     elif runner is not None:
-        # The spec's own `uml`, which knows every field in it.
+        # The spec's own `vivarium`, which knows every field in it.
         head = [str(runner / "bin" / "vivarium"), "run", "--spec", str(spec)]
     else:
         head = [sys.executable, "-m", "vivarium.cli", "run", "--spec", str(spec)]
@@ -340,7 +340,7 @@ async def _stop(run: Run) -> None:
 
 def _spec(spec: Path) -> dict[str, Any]:
     """The fields of a spec this server reads: its name, since the file
-    name is a store hash, and the `uml` that knows the rest."""
+    name is a store hash, and the `vivarium` that knows the rest."""
     try:
         return json.loads(spec.read_text())
     except (OSError, json.JSONDecodeError):
@@ -363,7 +363,7 @@ def why_it_exited(output: str, lines: int = 15) -> str:
     """
     text = output.splitlines()
     for index, line in enumerate(text):
-        if line.startswith("[uml] evaluation failed:"):
+        if line.startswith("[vivarium] evaluation failed:"):
             return "\n".join(text[index : index + 4])
     return "\n".join(text[-lines:])
 
@@ -411,7 +411,7 @@ def build(runs_holder: list[Runs]) -> FastMCP:
         meanwhile."""
         written = _spec(Path(str(spec))) if spec is not None else {}
         name = (attr or str(written.get("name", "run"))).replace(".", "-")
-        out = Path(tempfile.mkdtemp(prefix=f"uml-{name}-"))
+        out = Path(tempfile.mkdtemp(prefix=f"vivarium-{name}-"))
         argv = run_argv(
             out=out,
             attr=attr,

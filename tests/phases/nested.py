@@ -17,7 +17,7 @@ is KVM_CREATE_VM, which returns a descriptor."""
 
 
 async def test(vms: Machines) -> None:
-    await vms.nested.wait_for_unit("uml-kvm.service", timeout=60)
+    await vms.nested.wait_for_unit("vivarium-kvm.service", timeout=60)
     answer = (await vms.nested.succeed(PROBE)).strip()
     print(f"[test] nested: KVM api and create-vm: {answer}")
     if answer != "12 True":

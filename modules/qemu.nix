@@ -87,7 +87,7 @@ lib.mkIf (cfg.backend == "qemu") {
     qcow2 over it, which is what UML's `ubd0=<cow>,<image>` does.
   */
   # `fakeroot` for the ownership -- modules/image.nix says why.
-  system.build.umlRootImage = pkgs.runCommand "qemu-root-image" {
+  system.build.vivariumRootImage = pkgs.runCommand "qemu-root-image" {
     nativeBuildInputs = [ pkgs.e2fsprogs pkgs.fakeroot ];
   } ''
     mkdir -p root/{dev,proc,sys,tmp,run,var,root,home,artifacts}
@@ -96,8 +96,8 @@ lib.mkIf (cfg.backend == "qemu") {
     mkdir -p root/nix-state/nix/daemon-socket
     ${lib.optionalString cfg.nixDatabase.enable ''
       mkdir -p root/nix-state/nix/db
-      install -m 0644 ${config.system.build.umlNixDatabase}/db.sqlite root/nix-state/nix/db/
-      install -m 0644 ${config.system.build.umlNixDatabase}/schema root/nix-state/nix/db/
+      install -m 0644 ${config.system.build.vivariumNixDatabase}/db.sqlite root/nix-state/nix/db/
+      install -m 0644 ${config.system.build.vivariumNixDatabase}/schema root/nix-state/nix/db/
       # See modules/image.nix: a build is where this is worth catching.
       test -s root/nix-state/nix/db/db.sqlite
       test -s root/nix-state/nix/db/schema''}
@@ -174,10 +174,10 @@ lib.mkIf (cfg.backend == "qemu") {
     flag is said here, not left to a VM that fails later with a bare "no
     /dev/kvm".
   */
-  systemd.services.uml-kvm = lib.mkIf cfg.nestedVirtualization {
+  systemd.services.vivarium-kvm = lib.mkIf cfg.nestedVirtualization {
     description = "Load KVM for nested virtualization";
     wantedBy = [ "multi-user.target" ];
-    before = [ "uml-agent.service" ];
+    before = [ "vivarium-agent.service" ];
     serviceConfig = {
       Type = "oneshot";
       RemainAfterExit = true;

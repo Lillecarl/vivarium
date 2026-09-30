@@ -753,7 +753,7 @@ def main(argv: list[str] | None = None) -> int:
 
     # A short directory: a sockaddr_un holds 108 bytes, and a bundle under
     # a long TMPDIR does not fit.
-    sockets = Path(tempfile.mkdtemp(prefix="uml-crun-", dir=os.environ.get("UML_RUN_ROOT") or "/tmp"))
+    sockets = Path(tempfile.mkdtemp(prefix="vivarium-crun-", dir=os.environ.get("VIVARIUM_RUN_ROOT") or "/tmp"))
     console = sockets / "console"
     listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     listener.bind(str(console))
@@ -801,7 +801,7 @@ def main(argv: list[str] | None = None) -> int:
             except (RuntimeError, subprocess.CalledProcessError) as error:
                 # On the console, which is where Machine looks for why a
                 # guest did not come up.
-                print(f"uml-crun: {error}", flush=True)
+                print(f"vivarium-crun: {error}", flush=True)
                 return 1
         if master is not None:
             _relay(master, proc)

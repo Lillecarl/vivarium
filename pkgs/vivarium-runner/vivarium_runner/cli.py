@@ -1,7 +1,7 @@
 """``vivarium-run``: boot one guest interactively, or run one command in it.
 
 The NixOS side generates a wrapper with every path already filled in
-(see ``system.build.umlRunner``), so from a shell this is::
+(see ``system.build.vivariumRunner``), so from a shell this is::
 
     nix run .#speedtest
     result/bin/vivarium-run --command 'systemctl status'
@@ -56,11 +56,11 @@ def _report(machine: Machine, ports: list[int]) -> None:
     """Say what the guest is listening on, and where that answers."""
     if not ports:
         return
-    print("[uml] listening in guest:", flush=True)
+    print("[vivarium] listening in guest:", flush=True)
     for port in ports:
         where = machine.reachable(port)
         print(
-            f"[uml]     {port:<6}-> {', '.join(where) if where else 'not forwarded'}",
+            f"[vivarium]     {port:<6}-> {', '.join(where) if where else 'not forwarded'}",
             flush=True,
         )
 
@@ -109,10 +109,10 @@ async def _run(args: argparse.Namespace) -> int:
         where = machine.reachable(args.ssh_port)
         if where:
             address, _, port = where[0].rpartition(":")
-            print(f"[uml] up; ssh -p {port} root@{address}, ^C to stop", flush=True)
+            print(f"[vivarium] up; ssh -p {port} root@{address}, ^C to stop", flush=True)
         else:
             print(
-                f"[uml] up; guest port {args.ssh_port} is not forwarded, ^C to stop",
+                f"[vivarium] up; guest port {args.ssh_port} is not forwarded, ^C to stop",
                 flush=True,
             )
         watcher = asyncio.ensure_future(_watch(machine))
@@ -129,7 +129,7 @@ def main(argv: list[str] | None = None) -> None:
     except KeyboardInterrupt:
         raise SystemExit(130) from None
     except (MachineError, ForwardError) as error:
-        print(f"[uml] {error}", file=sys.stderr, flush=True)
+        print(f"[vivarium] {error}", file=sys.stderr, flush=True)
         raise SystemExit(1) from None
 
 

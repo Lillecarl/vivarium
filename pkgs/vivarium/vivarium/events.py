@@ -63,7 +63,7 @@ class Kind(StrEnum):
     OUTPUT = "output"
     """What a phase printed. Rendered exactly as written, because a
     script prefixes its own lines -- `[test] ...` by convention here --
-    and `[uml] [test] ...` helps nobody. `grep '[test]'` keeps working,
+    and `[vivarium] [test] ...` helps nobody. `grep '[test]'` keeps working,
     which AGENTS.md has told people to do since the beginning."""
 
     CASE = "case"
@@ -148,7 +148,7 @@ def render(event: Event) -> str:
         return f"[error] {event.text}"
     if event.kind is Kind.OUTPUT:
         return event.text
-    return f"[uml] {event.text}"
+    return f"[vivarium] {event.text}"
 
 
 def _xml_escape(text: str) -> str:

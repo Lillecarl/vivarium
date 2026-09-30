@@ -11,7 +11,7 @@ dependencies = ["rpyc", "qemu.qmp"]
 
 [project.scripts]
 vivarium-run = "vivarium_runner.cli:main"
-uml-agent = "vivarium_runner.agent:main"
+vivarium-agent = "vivarium_runner.agent:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["vivarium_runner"]

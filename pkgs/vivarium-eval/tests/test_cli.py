@@ -11,7 +11,7 @@ class TestParse:
         assert request.command == "run"
         assert request.attr == ["lan", "qemu"]
         assert request.file == Path(".")
-        # `--` survives: `uml` needs it to find pytest's arguments.
+        # `--` survives: `vivarium` needs it to find pytest's arguments.
         assert request.rest == ["--out", "o", "-v", "--", "-k", "x"]
 
     def test_file_is_ours(self):

@@ -167,7 +167,7 @@ class Broadcast:
             except Exception as error:  # noqa: BLE001 -- see the module docstring
                 self._broken.add(index)
                 print(
-                    f"[uml] {type(sink).__name__} stopped taking events"
+                    f"[vivarium] {type(sink).__name__} stopped taking events"
                     f" ({error}); the run carries on",
                     file=sys.stderr,
                     flush=True,
@@ -179,7 +179,7 @@ class Broadcast:
                 sink.close()
             except Exception as error:  # noqa: BLE001
                 print(
-                    f"[uml] {type(sink).__name__} did not close cleanly: {error}",
+                    f"[vivarium] {type(sink).__name__} did not close cleanly: {error}",
                     file=sys.stderr,
                     flush=True,
                 )

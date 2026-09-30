@@ -94,7 +94,7 @@ spec:
 
 # A claim written the way a chart writes one: no `storageClassName`, so
 # it binds only if the cluster has a default class.  That is what
-# `services.uml-k8s.persistentVolumes` installs, and the thing most charts
+# `services.vivarium-k8s.persistentVolumes` installs, and the thing most charts
 # assume a cluster has.
 #
 # Two pods, one after the other, because a volume that does not keep what

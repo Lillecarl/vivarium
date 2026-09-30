@@ -3,7 +3,7 @@ ends.
 
 Everything a run writes outside `--out` goes under one run root: `uml
 run` points `TMPDIR` at it, and the runner's short-path fallbacks for
-sockets use it too (`UML_RUN_ROOT`). A normal end removes it. So does a
+sockets use it too (`VIVARIUM_RUN_ROOT`). A normal end removes it. So does a
 SIGKILL of the runner: before it enters its namespace, the runner forks
 a cleaner in a session of its own, which waits on the runner's pidfd and
 then removes the root. A killed process group does not take the cleaner
@@ -25,10 +25,10 @@ import shutil
 import tempfile
 from pathlib import Path
 
-ENV = "UML_RUN_ROOT"
-KEEP = "UML_KEEP"
+ENV = "VIVARIUM_RUN_ROOT"
+KEEP = "VIVARIUM_KEEP"
 """Set, nothing is removed: not by the runner, not by the cleaner."""
-PREFIX = "uml-run-"
+PREFIX = "vivarium-run-"
 OWNERS = "owners"
 """`<runner pid> <start> <cleaner pid> <start>`: who may still use a root.
 A start time as well as a pid, so a reused pid is not taken for the run."""

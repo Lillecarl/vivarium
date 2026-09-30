@@ -361,7 +361,7 @@ in
       {
         assertion = unknown == [ ];
         message =
-          "uml: these phases are named in an `after` and do not exist: "
+          "vivarium: these phases are named in an `after` and do not exist: "
           + lib.concatStringsSep ", " unknown
           + ". A phase that depends on nothing is not skipped when its"
           + " dependency fails, so this would be silent.";
@@ -369,13 +369,13 @@ in
       {
         assertion = strangers == [ ];
         message =
-          "uml: these guests are named in a phase's `nodes` and are not in `nodes`: "
+          "vivarium: these guests are named in a phase's `nodes` and are not in `nodes`: "
           + lib.concatStringsSep ", " strangers;
       }
       {
         assertion = ambiguous == [ ];
         message =
-          "uml: each phase sets exactly one of `script` and `pytest`; these do not: "
+          "vivarium: each phase sets exactly one of `script` and `pytest`; these do not: "
           + lib.concatStringsSep ", " ambiguous;
       }
     ];
@@ -395,7 +395,7 @@ in
     ordered =
       if sorted ? cycle then
         throw (
-          "uml: the phases in run '${config.name}' depend on each other in a cycle: "
+          "vivarium: the phases in run '${config.name}' depend on each other in a cycle: "
           + lib.concatMapStringsSep " -> " (phase: phase.name) sorted.cycle
         )
       else

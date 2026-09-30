@@ -42,8 +42,8 @@ class TestStatus:
 
 def test_locate_takes_a_directory_or_an_id(tmp_path: Path):
     assert locate(str(tmp_path)) == tmp_path / SOCKET
-    assert locate("uml-x-abc").name == SOCKET
-    assert locate("uml-x-abc").parent.name == "uml-x-abc"
+    assert locate("vivarium-x-abc").name == SOCKET
+    assert locate("vivarium-x-abc").parent.name == "vivarium-x-abc"
 
 
 async def _serve(path: Path, events: list[dict]) -> None:

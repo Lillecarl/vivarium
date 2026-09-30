@@ -57,7 +57,7 @@ class TestRenderIsPure:
         assert line == "[cp] $ kubectl get nodes"
 
     def test_anything_else_is_the_runner_talking(self):
-        assert render(event(Kind.NOTE, "output in /tmp/x")) == "[uml] output in /tmp/x"
+        assert render(event(Kind.NOTE, "output in /tmp/x")) == "[vivarium] output in /tmp/x"
 
 
 class TestAnEventIsNotALogLine:
@@ -239,7 +239,7 @@ class TestTerminal:
 
         stream = io.StringIO()
         Terminal(Level.INFO, stream).emit(event(Kind.NOTE, "hello"))
-        assert stream.getvalue() == "[uml] hello\n"
+        assert stream.getvalue() == "[vivarium] hello\n"
 
     def test_it_obeys_the_level(self):
         import io
@@ -262,7 +262,7 @@ class TestJunitSink:
 
 
 class TestAPhaseTalkingIsNotTheRunnerTalking:
-    """A script prefixes its own lines; `[uml] [test] x` helps nobody.
+    """A script prefixes its own lines; `[vivarium] [test] x` helps nobody.
 
     AGENTS.md has told people to `grep '[test]'` since the beginning, so
     captured output is rendered exactly as it was written.
@@ -273,4 +273,4 @@ class TestAPhaseTalkingIsNotTheRunnerTalking:
         assert line == "[test] the guest answers"
 
     def test_the_runner_still_marks_its_own(self):
-        assert render(event(Kind.NOTE, "booting one")) == "[uml] booting one"
+        assert render(event(Kind.NOTE, "booting one")) == "[vivarium] booting one"

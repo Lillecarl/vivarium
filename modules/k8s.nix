@@ -13,11 +13,11 @@
   ...
 }:
 let
-  cfg = config.services.uml-k8s;
+  cfg = config.services.vivarium-k8s;
   images = pkgs.callPackage ./k8s-images.nix { };
 
   kubernetes = pkgs.kubernetes;
-  # The unit that serves the CRI, and where. `uml-k8s-cri.target` names the
+  # The unit that serves the CRI, and where. `vivarium-k8s-cri.target` names the
   # unit, so `bring_up` waits for either without knowing which.
   cri =
     {
@@ -330,7 +330,7 @@ let
     means CoreDNS and nothing else, long after the nodes all went Ready.
   */
   /*
-    `ipMasq` follows `services.uml-k8s.images`.
+    `ipMasq` follows `services.vivarium-k8s.images`.
 
     Under `"nix"` a pod has nowhere to go: the node holds every image it
     will ever run and the guest is in a build sandbox, so masquerading pod
@@ -344,14 +344,14 @@ let
     with no error anywhere naming a route.
   */
   cniSetup = pkgs.writeShellApplication {
-    name = "uml-k8s-cni";
+    name = "vivarium-k8s-cni";
     text = ''
       if [ $# -ne 1 ]; then
-        echo "usage: uml-k8s-cni <pod-cidr>" >&2
+        echo "usage: vivarium-k8s-cni <pod-cidr>" >&2
         exit 1
       fi
       mkdir -p /etc/cni/net.d
-      cat > /etc/cni/net.d/10-uml.conflist <<EOF
+      cat > /etc/cni/net.d/10-vivarium.conflist <<EOF
       {
         "cniVersion": "1.0.0",
         "name": "uml",
@@ -374,7 +374,7 @@ let
         ]
       }
       EOF
-      echo "uml-k8s-cni: $1 on cni0"
+      echo "vivarium-k8s-cni: $1 on cni0"
     '';
   };
 
@@ -410,11 +410,11 @@ let
     );
 
   joinNode = pkgs.writeShellApplication {
-    name = "uml-k8s-join";
+    name = "vivarium-k8s-join";
     runtimeInputs = [ kubernetes ];
     text = ''
       if [ $# -ne 3 ]; then
-        echo "usage: uml-k8s-join <endpoint> <token> <ca-cert-hash>" >&2
+        echo "usage: vivarium-k8s-join <endpoint> <token> <ca-cert-hash>" >&2
         exit 1
       fi
       config=$(mktemp)
@@ -431,11 +431,11 @@ let
     '';
   };
 
-  storageRoot = "/var/lib/uml-storage";
+  storageRoot = "/var/lib/vivarium-storage";
 
   /*
     A default StorageClass, and the volumes behind it.  See
-    `services.uml-k8s.persistentVolumes`.
+    `services.vivarium-k8s.persistentVolumes`.
 
     One document, as a `v1 List`, because `yaml.generate` writes a single
     mapping and `kubectl apply` reads a List as the resources in it.
@@ -460,7 +460,7 @@ let
     released volume here, and a test that wants a clean one starts a new
     guest.
   */
-  storageManifest = yaml.generate "uml-storage.yaml" {
+  storageManifest = yaml.generate "vivarium-storage.yaml" {
     apiVersion = "v1";
     kind = "List";
     items = [
@@ -545,7 +545,7 @@ let
 
   # What `bring_up` applies, like `storageManifest`: a RuntimeClass per
   # handler, named after it.
-  runtimeManifest = yaml.generate "uml-runtimes.yaml" {
+  runtimeManifest = yaml.generate "vivarium-runtimes.yaml" {
     apiVersion = "v1";
     kind = "List";
     items = map (name: {
@@ -557,7 +557,7 @@ let
   };
 in
 {
-  options.services.uml-k8s = {
+  options.services.vivarium-k8s = {
     enable = lib.mkEnableOption "a kubeadm Kubernetes node";
 
     role = lib.mkOption {
@@ -568,7 +568,7 @@ in
       description = ''
         Whether this node runs the control plane.  The difference is
         small: a control plane gets the kubeadm init configuration and a
-        tmpfs for etcd, and a worker gets `uml-k8s-join`.  Both run the
+        tmpfs for etcd, and a worker gets `vivarium-k8s-join`.  Both run the
         same kubelet and containerd.
       '';
     };
@@ -579,7 +579,7 @@ in
       description = ''
         Addresses pods are given, from which kube-controller-manager
         hands each node a /24.  Nothing routes between those /24s by
-        itself -- see `uml-k8s-cni`.
+        itself -- see `vivarium-k8s-cni`.
       '';
     };
 
@@ -734,7 +734,7 @@ in
         cluster gets a default StorageClass at all.
 
         Above zero, the node writes a StorageClass named `standard` and
-        that many hostPath volumes to `/etc/kubernetes/uml-storage.yaml`,
+        that many hostPath volumes to `/etc/kubernetes/vivarium-storage.yaml`,
         and `bring_up` applies every node's copy once the cluster is up.
         A chart that leaves `storageClassName` unset then binds, which is
         what a chart written for a cloud or for kind expects.
@@ -766,7 +766,7 @@ in
     assertions = [
       {
         assertion = !(lib.elem "runsc" cfg.runtimes && config.vivarium.backend == "uml");
-        message = "services.uml-k8s.runtimes: runsc (gVisor) does not start under UML; use the qemu backend.";
+        message = "services.vivarium-k8s.runtimes: runsc (gVisor) does not start under UML; use the qemu backend.";
       }
       {
         # Measured with CRI-O 1.36.5 and runsc 20260406, on a plain busybox
@@ -774,16 +774,16 @@ in
         # ("cannot load sandbox"); without it, conmon never finds the exit
         # file and the container ends with exit code -1 and no output.
         assertion = !(lib.elem "runsc" cfg.runtimes && cfg.cri == "crio");
-        message = "services.uml-k8s.runtimes: runsc (gVisor) does not run a container under CRI-O here; use cri = \"containerd\".";
+        message = "services.vivarium-k8s.runtimes: runsc (gVisor) does not run a container under CRI-O here; use cri = \"containerd\".";
       }
       {
         assertion = lib.elem "kata" cfg.runtimes -> config.vivarium.nestedVirtualization;
-        message = "services.uml-k8s.runtimes: kata starts a VM per pod and needs vivarium.nestedVirtualization.";
+        message = "services.vivarium-k8s.runtimes: kata starts a VM per pod and needs vivarium.nestedVirtualization.";
       }
       {
         assertion = config.vivarium.lan.address != null;
         message = ''
-          services.uml-k8s needs vivarium.lan.address: every guest shares
+          services.vivarium-k8s needs vivarium.lan.address: every guest shares
           one address behind passt, so a node with no segment of its own
           has no address to register with.
         '';
@@ -816,7 +816,7 @@ in
         plugins."io.containerd.cri.v1.images".pinned_images.sandbox =
           images.sandboxImage;
         # Off in containerd, and off here unless a test says otherwise --
-        # see `services.uml-k8s.nri`.
+        # see `services.vivarium-k8s.nri`.
         plugins."io.containerd.nri.v1.nri".disable = !cfg.nri;
       };
     };
@@ -877,7 +877,7 @@ in
       };
     };
 
-    systemd.targets.uml-k8s-cri = {
+    systemd.targets.vivarium-k8s-cri = {
       description = "The container runtime kubelet talks to";
       wantedBy = [ "multi-user.target" ];
       requires = [ cri.unit ];
@@ -906,8 +906,8 @@ in
       # the images stay on disk, and under CRI-O `podman load` stages about
       # 770M in /var/tmp. Measured on nixkube's node: free space fell to
       # 99M, and kubelet held a DiskPressure taint for five minutes.
-      wants = [ "uml-k8s-cri.target" ];
-      after = [ "uml-k8s-cri.target" ];
+      wants = [ "vivarium-k8s-cri.target" ];
+      after = [ "vivarium-k8s-cri.target" ];
       before = [ "kubelet.service" ];
       path = [
         pkgs.gzip
@@ -981,7 +981,7 @@ in
       That is fine: nothing schedules on this value, it is reported as
       node metadata and never compared against anything.
     */
-    systemd.services.uml-k8s-cpuinfo = {
+    systemd.services.vivarium-k8s-cpuinfo = {
       description = "Give /proc/cpuinfo a clock speed for cadvisor";
       wantedBy = [ "multi-user.target" ];
       before = [ "kubelet.service" ];
@@ -997,7 +997,7 @@ in
       # machine's own mount namespace, where kubelet will read it.
       script = ''
         if grep -q '^cpu MHz' /proc/cpuinfo; then
-          echo "uml-k8s-cpuinfo: already has one, leaving it alone"
+          echo "vivarium-k8s-cpuinfo: already has one, leaving it alone"
           exit 0
         fi
         mhz=$(awk -F'[:[:space:]]+' '/^bogomips/ { print $2; exit }' /proc/cpuinfo)
@@ -1010,7 +1010,7 @@ in
         awk -v mhz="$mhz" '{ print } /^processor/ { print "cpu MHz\t\t: " mhz }' \
           /proc/cpuinfo > /run/cpuinfo
         mount --bind /run/cpuinfo /proc/cpuinfo
-        echo "uml-k8s-cpuinfo: reporting $mhz MHz"
+        echo "vivarium-k8s-cpuinfo: reporting $mhz MHz"
       '';
     };
 
@@ -1023,12 +1023,12 @@ in
       description = "kubelet, the Kubernetes node agent";
       wantedBy = [ "multi-user.target" ];
       after = [
-        "uml-k8s-cri.target"
+        "vivarium-k8s-cri.target"
         "k8s-load-images.service"
-        "uml-k8s-cpuinfo.service"
+        "vivarium-k8s-cpuinfo.service"
       ];
-      wants = [ "uml-k8s-cri.target" ];
-      requires = [ "uml-k8s-cpuinfo.service" ];
+      wants = [ "vivarium-k8s-cri.target" ];
+      requires = [ "vivarium-k8s-cpuinfo.service" ];
       unitConfig.ConditionPathExists = "/var/lib/kubelet/config.yaml";
       path = with pkgs; [
         util-linux
@@ -1113,16 +1113,16 @@ in
       # Where `provision_storage` looks.  A node with no volumes writes no
       # file and the runner applies nothing, so storage is one knob and not
       # two -- unlike `skipAddons`, which a test has to repeat in `addons`.
-      "kubernetes/uml-storage.yaml".source = storageManifest;
+      "kubernetes/vivarium-storage.yaml".source = storageManifest;
     }
     // lib.optionalAttrs (cfg.cri == "crio") {
-      # CRI-O's own bridge sorts before `10-uml.conflist` and would win. The
-      # pod network is `uml-k8s-cni`'s, whichever CRI runs.
+      # CRI-O's own bridge sorts before `10-vivarium.conflist` and would win. The
+      # pod network is `vivarium-k8s-cni`'s, whichever CRI runs.
       "cni/net.d/10-crio-bridge.conflist".enable = false;
     }
     // lib.optionalAttrs (cfg.runtimes != [ ]) {
       # Where `provision_runtimes` looks, on the same terms.
-      "kubernetes/uml-runtimes.yaml".source = runtimeManifest;
+      "kubernetes/vivarium-runtimes.yaml".source = runtimeManifest;
     }
     // {
       # What every pod gets as its /etc/resolv.conf, and what CoreDNS
@@ -1199,7 +1199,7 @@ in
     # So a test can say `kubectl get nodes` rather than carrying the
     # kubeconfig through every command.  Commands from the host run as
     # children of the agent, and systemd units do not read /etc/profile.
-    systemd.services.uml-agent.environment.KUBECONFIG =
+    systemd.services.vivarium-agent.environment.KUBECONFIG =
       lib.mkIf (cfg.role == "control-plane") "/etc/kubernetes/admin.conf";
   };
 }

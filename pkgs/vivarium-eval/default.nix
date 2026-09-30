@@ -2,11 +2,11 @@
 #
 # On nanopynix's own Python set rather than nixpkgs' python3Packages,
 # because nanopynix is built there and one interpreter has to hold it,
-# `uml` and `vivarium_runner` together. `uml` and `vivarium-runner` are lifted into
+# `vivarium` and `vivarium_runner` together. `vivarium` and `vivarium-runner` are lifted into
 # that set from their own pyproject.toml, as easykubenix does for `ekn`.
 #
 # Nothing else in this repository depends on this. `mkTest` and every
-# check use the nixpkgs build of `uml`, so a consumer never
+# check use the nixpkgs build of `vivarium`, so a consumer never
 # builds nanopynix -- the sandboxed path must not evaluate anyway.
 {
   pkgs,

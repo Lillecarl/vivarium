@@ -98,14 +98,14 @@ async def test(vms: Machines) -> None:
     node = vms.node
     version = vms.settings["kubernetesVersion"]
 
-    await node.wait_for_unit("uml-k8s-cri.target", timeout=300)
+    await node.wait_for_unit("vivarium-k8s-cri.target", timeout=300)
     await node.wait_for_unit("k8s-load-images.service", timeout=600)
 
     # cadvisor refuses to start kubelet on a machine with no clock speed,
     # and UML prints none.  Checked here rather than left to the cluster
     # test, where it costs five minutes of kubeadm init to find out that
     # kubelet has been crash-looping the whole time.
-    await node.wait_for_unit("uml-k8s-cpuinfo.service", timeout=120)
+    await node.wait_for_unit("vivarium-k8s-cpuinfo.service", timeout=120)
     cpuinfo = await node.succeed("cat /proc/cpuinfo")
     speed = re.search(r"(?:cpu MHz|CPU MHz|clock)\s*:\s*([0-9]+\.[0-9]+)", cpuinfo)
     if not speed:
@@ -178,7 +178,7 @@ async def probe(node: Machine, handler: str, version: str) -> None:
     """Run the store probe under one containerd runtime handler."""
     network = NODE_NETWORK
     if handler in VM_HANDLERS:
-        await node.succeed(f"uml-k8s-cni {POD_CIDR}")
+        await node.succeed(f"vivarium-k8s-cni {POD_CIDR}")
         network = POD_NETWORK
     await write_json(node, f"/tmp/pod-{handler}.json", pod(f"probe-{handler}", network))
 

@@ -476,7 +476,7 @@ async def ctl(args: argparse.Namespace) -> int:
     try:
         reply = await request(socket, Op(args.op), arg)
     except OSError as error:
-        print(f"[uml] no run is listening at {socket}: {error}", file=sys.stderr)
+        print(f"[vivarium] no run is listening at {socket}: {error}", file=sys.stderr)
         return 1
     if reply.output:
         print(reply.output, end="" if reply.output.endswith("\n") else "\n")
@@ -509,8 +509,8 @@ def main(argv: list[str] | None = None) -> None:
         except (FileNotFoundError, ConnectionRefusedError) as error:
             # No socket, or nobody behind it: the server that started the
             # run is gone. What the run wrote is still on the disk.
-            print(f"[uml] cannot follow {socket}: {error}", file=sys.stderr, flush=True)
-            print(f"[uml] read {socket.parent / 'events.jsonl'} instead", file=sys.stderr, flush=True)
+            print(f"[vivarium] cannot follow {socket}: {error}", file=sys.stderr, flush=True)
+            print(f"[vivarium] read {socket.parent / 'events.jsonl'} instead", file=sys.stderr, flush=True)
             raise SystemExit(3) from None
         except KeyboardInterrupt:
             raise SystemExit(130) from None
@@ -529,7 +529,7 @@ def main(argv: list[str] | None = None) -> None:
     except KeyboardInterrupt:
         raise SystemExit(130) from None
     except (SessionError, SpecError, namespace.NamespaceError) as error:
-        print(f"[uml] {error}", file=sys.stderr, flush=True)
+        print(f"[vivarium] {error}", file=sys.stderr, flush=True)
         raise SystemExit(1) from None
 
 

@@ -430,7 +430,7 @@ class Machine:
 
         if self._rundir is not None:
             storeview.remove(self._rundir / "nix")
-            if not os.environ.get("UML_KEEP"):
+            if not os.environ.get("VIVARIUM_KEEP"):
                 shutil.rmtree(self._rundir, ignore_errors=True)
             self._rundir = None
 

@@ -394,7 +394,7 @@ UPLINK_UPSTREAM_DNS = "1.1.1.1"
 
 # For a network that does not reach 1.1.1.1.  The one knob, and the only
 # thing here that looks at the host at all.
-ENV_DNS = "UML_DNS_HOST"
+ENV_DNS = "VIVARIUM_DNS_HOST"
 
 
 OFFLINE_OUTBOUND = "127.0.0.1"

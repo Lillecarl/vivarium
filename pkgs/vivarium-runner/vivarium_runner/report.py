@@ -33,7 +33,7 @@ _WIDTH = 200
 # The environment variable that names where to write. `mkTest` sets it to
 # a file in `$out`, so a sandboxed build always records; a run by hand
 # records when it is asked to.
-ENV = "UML_TEST_REPORT"
+ENV = "VIVARIUM_TEST_REPORT"
 
 
 @dataclass
@@ -134,7 +134,7 @@ class Report:
     def summary(self, slowest: int = 5) -> str:
         """The same numbers as the JSON, short enough for a CI log.
 
-        The file is only written when `$UML_TEST_REPORT` names one, which
+        The file is only written when `$VIVARIUM_TEST_REPORT` names one, which
         a sandboxed build always does and `nix run` never does -- so
         without this a CI job that boots a guest leaves no trace of where
         its twenty minutes went.

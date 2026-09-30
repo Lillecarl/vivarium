@@ -5,8 +5,8 @@
 # is the point of the exercise -- easykubenix drives `ekn kubeapply` against a
 # cluster this builds -- so they are a file that takes a package set.
 #
-#     let uml = import (sources.user-mode-nixos + "/lib.nix") { inherit pkgs; };
-#     in uml.mkTest { name = "..."; script = ./mine.py; nodes = { ... }; }
+#     let vivarium = import (sources.vivarium + "/lib.nix") { inherit pkgs; };
+#     in vivarium.mkTest { name = "..."; script = ./mine.py; nodes = { ... }; }
 #
 # Nothing here is specific to the tests in this repository. `flake.nix` and
 # `default.nix` both call it, so the two doors cannot drift apart.
@@ -20,12 +20,12 @@ rec {
     guest: a caller puts it in the Python it type checks with.  It carries
     `py.typed`, so pyright reads `vms.node` as a `Machine`.
 
-        python3.withPackages (_: [ uml.runner ])
+        python3.withPackages (_: [ vivarium.runner ])
   */
   runner = pkgs.callPackage ./pkgs/vivarium-runner { };
 
   /**
-    The session, and the `uml` CLI that drives one.
+    The session, and the `vivarium` CLI that drives one.
 
     The redesign lives here; `runner` above is the mechanism it uses and
     is not going away. See `docs/design/history/running-anywhere.md`.
@@ -35,14 +35,14 @@ rec {
   /*
     pyright over a caller's test scripts, against this library.
 
-        typeCheck { scripts = [ ./tests/uml/run.py ]; }
+        typeCheck { scripts = [ ./tests/vivarium/run.py ]; }
 
     `mkTest` calls this itself -- see `vivarium.typeCheck`.  Call it
     directly for scripts that are not a test's.
   */
   typeCheck =
     {
-      name ? "uml-test-scripts",
+      name ? "vivarium-test-scripts",
       scripts,
       extraPackages ? [ ],
       strict ? false,
@@ -141,7 +141,7 @@ rec {
       # Both backends get a read-only root image of `vivarium.diskSize`
       # and a per-run copy-on-write layer over it. Only what is inside
       # differs: UML boots `/init` from it, QEMU mounts it as `/`.
-      image = "${machine.system.build.umlRootImage}";
+      image = "${machine.system.build.vivariumRootImage}";
     }
     // lib.optionalAttrs (machine.vivarium.backend == "qemu") {
       boot = machine.system.build.qemuBoot;
@@ -218,7 +218,7 @@ rec {
     {
       tun ? false,
     }:
-    pkgs.runCommand "uml-container-probe${lib.optionalString tun "-tun"}"
+    pkgs.runCommand "vivarium-container-probe${lib.optionalString tun "-tun"}"
       {
         nativeBuildInputs = [ (runner.pythonModule.withPackages (_: [ runner ])) ];
         requiredSystemFeatures = [ "uid-range" ];
@@ -346,7 +346,7 @@ rec {
 
       inherit (checkedConfig) name backend;
 
-      settingsFile = pkgs.writeText "uml-${name}-settings.json" (builtins.toJSON checkedConfig.settings);
+      settingsFile = pkgs.writeText "vivarium-${name}-settings.json" (builtins.toJSON checkedConfig.settings);
 
       /*
         Every guest, evaluated, by name. Each one receives all of them as
@@ -396,7 +396,7 @@ rec {
           inherit (typing) extraPackages strict ignore;
         }}";
 
-      spec = pkgs.writeText "uml-${name}-spec.json" (
+      spec = pkgs.writeText "vivarium-${name}-spec.json" (
         builtins.toJSON (
           toolchainFor machines
           // {
@@ -437,14 +437,14 @@ rec {
               machine:
               machineSpec machine
               // lib.optionalAttrs (!machine.vivarium.hostStore.enable) {
-                storePaths = "${machine.system.build.umlNixRegistration}/store-paths";
+                storePaths = "${machine.system.build.vivariumNixRegistration}/store-paths";
               }
             ) machines;
           }
         )
       );
 
-      uml = lib.getExe session;
+      vivarium = lib.getExe session;
 
       /*
         The run outside the sandbox.
@@ -456,7 +456,7 @@ rec {
         environment variable nobody remembers.
       */
       /*
-        `uml` with this run's spec and some flags baked in: a binary
+        `vivarium` with this run's spec and some flags baked in: a binary
         wrapper, no shell. The type check is named in its environment,
         which makes it a dependency: the by-hand door is where a type
         error gets written, so it must not skip the check.
@@ -469,21 +469,21 @@ rec {
             meta.mainProgram = program;
           }
           ''
-            makeWrapper ${uml} $out/bin/${program} \
+            makeWrapper ${vivarium} $out/bin/${program} \
               --add-flags ${lib.escapeShellArg "${command} --spec ${spec} ${flags}"} \
-              --set UML_TYPECHECKED ${lib.escapeShellArg checked}
+              --set VIVARIUM_TYPECHECKED ${lib.escapeShellArg checked}
           '';
 
       # A run by hand that exits on the first failure, as the check does.
-      driver = wrap "uml-driver-${name}" "run" "";
+      driver = wrap "vivarium-driver-${name}" "run" "";
       # The same, paused on the first failure with the guests up. The MCP
       # server starts this one.
-      driverDebug = wrap "uml-driver-debug-${name}" "run" "--break-on-failure";
+      driverDebug = wrap "vivarium-driver-debug-${name}" "run" "--break-on-failure";
       # nixos-test's REPL: paused before the first phase; see vivarium/repl.py.
       # `.driverInteractive` is this, from the run with `interactive`
       # merged in.
-      driverInteractiveHere = wrap "uml-driver-interactive-${name}" "run" "--interactive";
-      lister = wrap "uml-phases-${name}" "phases" "";
+      driverInteractiveHere = wrap "vivarium-driver-interactive-${name}" "run" "--interactive";
+      lister = wrap "vivarium-phases-${name}" "phases" "";
 
       extend =
         { modules }:
@@ -508,7 +508,7 @@ rec {
       */
       probe = probeFor machines;
       attempt =
-        pkgs.runCommand "uml-session-${name}-attempt"
+        pkgs.runCommand "vivarium-session-${name}-attempt"
           {
             requiredSystemFeatures = featuresFor machines;
             passthru = { inherit spec probe; };
@@ -520,11 +520,11 @@ rec {
             # A dependency, so a sandbox that cannot run a container guest
             # fails there, in seconds and by name, before this boots one.
             ${lib.optionalString (probe != null) ''cp ${probe} "$out/probe"''}
-            ${uml} run --spec ${spec} --out "$out" || true
+            ${vivarium} run --spec ${spec} --out "$out" || true
             test -f "$out/status" || echo 1 > "$out/status"
           '';
     in
-    pkgs.runCommand "uml-session-${name}"
+    pkgs.runCommand "vivarium-session-${name}"
       {
         passthru = {
           inherit

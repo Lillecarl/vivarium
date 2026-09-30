@@ -8,7 +8,7 @@ the static pods, CoreDNS and kube-proxy, and `imagePullPolicy` is `Never`
 everywhere. Anything whose job is to put a store into a pod therefore
 passes here with its subject switched off.
 
-This asks the other question. `services.uml-k8s.images = "pull"` turns all
+This asks the other question. `services.vivarium-k8s.images = "pull"` turns all
 of that off: kubeadm fetches from `registry.k8s.io`, no patch is applied,
 nothing is imported. What comes up is an ordinary kubeadm node.
 

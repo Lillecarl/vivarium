@@ -47,14 +47,14 @@ lib.mkIf (cfg.backend == "container") {
     store is the host's, under an overlay whose upper and work
     directories are the two here, so a guest writes to its own store.
   */
-  system.build.umlRootImage = pkgs.runCommand "container-root" { } ''
+  system.build.vivariumRootImage = pkgs.runCommand "container-root" { } ''
     mkdir -p $out/{etc,var,root,home,artifacts,nix/store,nix/var,.nix-upper,.nix-work}
     # Without it nix-daemon.socket is skipped silently -- see image.nix.
     mkdir -p $out/nix-state/nix/daemon-socket
     ${lib.optionalString cfg.nixDatabase.enable ''
       mkdir -p $out/nix-state/nix/db
-      install -m 0644 ${config.system.build.umlNixDatabase}/db.sqlite $out/nix-state/nix/db/
-      install -m 0644 ${config.system.build.umlNixDatabase}/schema $out/nix-state/nix/db/
+      install -m 0644 ${config.system.build.vivariumNixDatabase}/db.sqlite $out/nix-state/nix/db/
+      install -m 0644 ${config.system.build.vivariumNixDatabase}/schema $out/nix-state/nix/db/
       test -s $out/nix-state/nix/db/db.sqlite''}
   '';
 

@@ -41,7 +41,7 @@ let
 
     # The runner names the guest's store view on the kernel command line;
     # without one, the host's whole /nix.
-    store="''${UML_STORE:-/nix}"
+    store="''${VIVARIUM_STORE:-/nix}"
     echo "uml-init: mounting $store as /nix ..."
     mkdir -p /host/nix
     mount -t hostfs none /host/nix -o "$store"
@@ -60,10 +60,10 @@ let
     # mounts through fsconfig(2), and hostfs takes no parameter naming the
     # host directory, so the new API can only give the guest the host's
     # whole root. Measured -- "hostfs: Unknown parameter '/some/dir'".
-    if [ -n "$UML_ARTIFACTS" ]; then
-      echo "uml-init: mounting $UML_ARTIFACTS on /artifacts ..."
+    if [ -n "$VIVARIUM_ARTIFACTS" ]; then
+      echo "uml-init: mounting $VIVARIUM_ARTIFACTS on /artifacts ..."
       mkdir -p /artifacts
-      mount -t hostfs none /artifacts -o "$UML_ARTIFACTS"
+      mount -t hostfs none /artifacts -o "$VIVARIUM_ARTIFACTS"
     fi
 
     echo "uml-init: starting systemd ..."
@@ -93,7 +93,7 @@ lib.mkIf (cfg.backend == "uml") {
     `fakeroot` answers `stat` with what `chown` was told, which is all
     `mkfs.ext4 -d` reads.
   */
-  system.build.umlRootImage = pkgs.runCommand "uml-root-image" {
+  system.build.vivariumRootImage = pkgs.runCommand "vivarium-root-image" {
     nativeBuildInputs = [ pkgs.e2fsprogs pkgs.fakeroot ];
   } ''
     mkdir -p root/{dev,proc,sys,tmp,run,var,root,home,bin,sbin,artifacts}
@@ -108,8 +108,8 @@ lib.mkIf (cfg.backend == "uml") {
     install -m 0555 ${init} root/init
     ${lib.optionalString cfg.nixDatabase.enable ''
       mkdir -p root/nix-state/nix/db
-      install -m 0644 ${build.umlNixDatabase}/db.sqlite root/nix-state/nix/db/
-      install -m 0644 ${build.umlNixDatabase}/schema root/nix-state/nix/db/
+      install -m 0644 ${build.vivariumNixDatabase}/db.sqlite root/nix-state/nix/db/
+      install -m 0644 ${build.vivariumNixDatabase}/schema root/nix-state/nix/db/
       # An empty database looks exactly like a full one until something
       # runs Nix, and looks then like a network timeout naming nothing.
       # Fail the build instead.
@@ -127,13 +127,13 @@ lib.mkIf (cfg.backend == "uml") {
   '';
 
   # `nix run` this to get one guest with everything already pointed at it.
-  system.build.umlRunner = pkgs.writeShellApplication {
+  system.build.vivariumRunner = pkgs.writeShellApplication {
     name = "vivarium-run";
-    runtimeInputs = [ build.umlRunnerPackage ];
+    runtimeInputs = [ build.vivariumRunnerPackage ];
     text = ''
       exec vivarium-run \
         --kernel ${build.umlKernel}/linux \
-        --root-image ${build.umlRootImage} \
+        --root-image ${build.vivariumRootImage} \
         --bridge ${lib.getExe build.umlPasstBridge} \
         --passt ${pkgs.passt}/bin/passt \
         --ssh-port ${toString cfg.sshPort} \

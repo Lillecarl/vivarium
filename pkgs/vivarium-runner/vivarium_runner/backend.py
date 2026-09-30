@@ -87,12 +87,12 @@ def _tail(path: Path, lines: int = 20) -> str:
     return "\n".join(text.splitlines()[-lines:]) or f"({path} is empty)"
 
 
-ARTIFACTS_ENV = "UML_ARTIFACTS"
+ARTIFACTS_ENV = "VIVARIUM_ARTIFACTS"
 """What the UML guest's /init reads the host directory from.  Not the
-host-side ``UML_TEST_ARTIFACTS``: that one names the root of a run, this
+host-side ``VIVARIUM_TEST_ARTIFACTS``: that one names the root of a run, this
 one names one guest's subdirectory of it."""
 
-RUN_ROOT_ENV = "UML_RUN_ROOT"
+RUN_ROOT_ENV = "VIVARIUM_RUN_ROOT"
 """A short directory `vivarium run` removes however it ends; see
 `vivarium/runroot.py`."""
 
@@ -103,7 +103,7 @@ def short_tmp() -> str:
     return os.environ.get(RUN_ROOT_ENV) or "/tmp"
 
 
-STORE_ENV = "UML_STORE"
+STORE_ENV = "VIVARIUM_STORE"
 """What the UML guest's /init mounts as its /nix: the guest's store view,
 or the host's /nix when it has none."""
 
@@ -230,7 +230,7 @@ def socket_dir(rundir: Path, name: str, fallback: str | None) -> tuple[Path, lis
     """
     if len(str(rundir / name).encode()) < mconsole.UNIX_PATH_MAX:
         return rundir, []
-    made = Path(tempfile.mkdtemp(prefix="uml-", dir=fallback or short_tmp()))
+    made = Path(tempfile.mkdtemp(prefix="vivarium-", dir=fallback or short_tmp()))
     return made, [made]
 
 

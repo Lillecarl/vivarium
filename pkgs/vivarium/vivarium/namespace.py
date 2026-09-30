@@ -28,7 +28,7 @@ from pathlib import Path
 
 from . import runroot
 
-ENTERED = "UML_NAMESPACE"
+ENTERED = "VIVARIUM_NAMESPACE"
 """Set in the re-executed runner, so it does not enter a second time."""
 
 SUBORDINATE_IDS = 65536

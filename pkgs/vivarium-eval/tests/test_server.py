@@ -17,18 +17,18 @@ class TestAnEvaluationError:
         "\x1b[31;1merror:\x1b[0m\n"
         "       … while calling the 'derivationStrict' builtin\n"
         "         at /nix/store/x/lib/customisation.nix:405:12:\n"
-        "       \x1b[31;1merror:\x1b[0m uml: these phases are named in an `after`"
+        "       \x1b[31;1merror:\x1b[0m vivarium: these phases are named in an `after`"
         " and do not exist: bot."
     )
 
     def test_the_point_comes_first_without_colour(self):
         text = explain(self.NIX)
-        assert text.startswith("error: uml: these phases")
+        assert text.startswith("error: vivarium: these phases")
         assert "\x1b" not in text
         assert "customisation.nix" in text, "the trace is kept, after the point"
 
     def test_the_channel_shows_the_point_not_the_trace(self):
-        output = "[uml] evaluating broken\n[uml] evaluation failed: " + explain(self.NIX) + "\n"
+        output = "[vivarium] evaluating broken\n[vivarium] evaluation failed: " + explain(self.NIX) + "\n"
         assert "do not exist: bot" in why_it_exited(output)
 
     def test_any_other_death_shows_the_end(self):
@@ -158,7 +158,7 @@ class TestRunArgv:
         assert argv[-2:] == ["--only", "cases"]
 
     def test_by_spec_with_the_runner_it_names(self, tmp_path: Path):
-        """A spec from a newer lib.nix, run with this package's `uml`,
+        """A spec from a newer lib.nix, run with this package's `vivarium`,
         lost its `pythonPath` without a word. Measured on nixkube."""
         argv = run_argv(
             out=tmp_path,
@@ -170,9 +170,9 @@ class TestRunArgv:
             only=[],
             offline=False,
             pytest_args=[],
-            runner=Path("/nix/store/y-uml"),
+            runner=Path("/nix/store/y-vivarium"),
         )
-        assert argv[:4] == ["/nix/store/y-uml/bin/vivarium", "run", "--spec", "/nix/store/x-spec.json"]
+        assert argv[:4] == ["/nix/store/y-vivarium/bin/vivarium", "run", "--spec", "/nix/store/x-spec.json"]
 
     def test_a_kernel_from_a_working_tree(self, tmp_path: Path):
         argv = run_argv(

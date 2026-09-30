@@ -34,7 +34,7 @@ from .net import build_lans
 from . import report
 
 
-ARTIFACTS_ENV = "UML_TEST_ARTIFACTS"
+ARTIFACTS_ENV = "VIVARIUM_TEST_ARTIFACTS"
 """``mkTest`` sets it to a directory inside the attempt derivation's
 output, which is why that derivation must not fail -- see lib.nix."""
 
@@ -174,7 +174,7 @@ def _artifacts_dir() -> Path:
     nobody read.
     """
     where = os.environ.get(ARTIFACTS_ENV)
-    path = Path(where) if where else Path(tempfile.mkdtemp(prefix="uml-artifacts-"))
+    path = Path(where) if where else Path(tempfile.mkdtemp(prefix="vivarium-artifacts-"))
     path.mkdir(parents=True, exist_ok=True)
     # Printed at the start, because a run that is killed reaches no end.
     print(f"[test] artifacts in {path}", flush=True)
@@ -239,7 +239,7 @@ def run_test(test: Callable[[Machines], Awaitable[None]]) -> None:
         async with machines(load_spec()) as vms:
             await test(vms)
 
-    # Written whichever way the run ends, and named by `$UML_TEST_REPORT`.
+    # Written whichever way the run ends, and named by `$VIVARIUM_TEST_REPORT`.
     # A run that timed out is the one whose timings are worth reading, so
     # the failing path must not be the one that skips this. See report.py.
     try:

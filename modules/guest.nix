@@ -226,7 +226,7 @@ in
   #
   # A container's agent listens on a socket and has no device unit to wait
   # for; one named anyway never appears, and the agent never starts.
-  systemd.services.uml-agent = let
+  systemd.services.vivarium-agent = let
     device = lib.removePrefix "/dev/" cfg.agentDevice;
     units = lib.optional (lib.hasPrefix "/dev/" cfg.agentDevice) "dev-${device}.device";
   in {
@@ -234,9 +234,9 @@ in
     wantedBy = [ "multi-user.target" ];
     after = units;
     bindsTo = units;
-    environment.UML_AGENT_DEVICE = cfg.agentDevice;
+    environment.VIVARIUM_AGENT_DEVICE = cfg.agentDevice;
     serviceConfig = {
-      ExecStart = lib.getExe' config.system.build.umlRunnerPackage "uml-agent";
+      ExecStart = lib.getExe' config.system.build.vivariumRunnerPackage "vivarium-agent";
       StandardOutput = "journal+console";
       StandardError = "journal+console";
     };
@@ -250,10 +250,10 @@ in
     `--output-fields` keeps an entry to what a reader filters on; the
     cursor and timestamps journalctl always adds come along anyway.
   */
-  systemd.services.uml-journal = lib.mkIf cfg.journal {
+  systemd.services.vivarium-journal = lib.mkIf cfg.journal {
     description = "Stream the journal to the host";
     wantedBy = [ "multi-user.target" ];
-    before = [ "uml-agent.service" ];
+    before = [ "vivarium-agent.service" ];
     after = [ "systemd-journald.service" ];
     unitConfig.RequiresMountsFor = "/artifacts";
     serviceConfig = {
@@ -273,7 +273,7 @@ in
 
     There was one, and it loaded a registration at every boot.  The
     database is built with the image now -- see `system.build.
-    umlNixDatabase` -- and sits on it under `/nix-state`, which the bind
+    vivariumNixDatabase` -- and sits on it under `/nix-state`, which the bind
     above puts at `/nix/var`.  So it is there before pid 1, and the check
     that it is there belongs to the image derivation, where a missing file
     stops a build rather than a boot.

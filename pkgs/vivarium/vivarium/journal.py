@@ -1,6 +1,6 @@
 """A guest's journal, followed while the guest runs.
 
-Each guest's `uml-journal` unit writes `journalctl --follow --output=json`
+Each guest's `vivarium-journal` unit writes `journalctl --follow --output=json`
 into `/artifacts/journal.jsonl`. hostfs and virtiofs are write-through
 (measured, `default.nix` `incr`), so the file on the host grows entry by
 entry, and whatever reached it survives the guest being killed.
@@ -28,7 +28,7 @@ if TYPE_CHECKING:
 FILE: Final = "journal.jsonl"
 """The name in each guest's `/artifacts`, and so in `artifacts/<name>/`."""
 
-SETTLE: Final = "uml-settle"
+SETTLE: Final = "vivarium-settle"
 """The identifier of the marker `Session.settle` logs and waits for. Its
 entries are the runner's own bookkeeping and never become events."""
 
