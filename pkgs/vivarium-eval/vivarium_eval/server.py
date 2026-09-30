@@ -55,7 +55,7 @@ if TYPE_CHECKING:
 CHANNEL: Final = "notifications/claude/channel"
 
 INSTRUCTIONS: Final = """\
-Runs NixOS guests under user-mode-nixos and lets you reach into them.
+Runs NixOS guests under vivarium and lets you reach into them.
 
 `start` launches a run in the background and returns its id at once; it
 pauses on the first failing phase with the guests still up. While paused,

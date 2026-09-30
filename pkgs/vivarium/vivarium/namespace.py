@@ -124,7 +124,7 @@ def enter(unshare: Path | None) -> None:
     if os.environ.get(ENTERED):
         return
     if unshare is None:
-        raise NamespaceError("the spec names no `unshare`; an older user-mode-nixos wrote it")
+        raise NamespaceError("the spec names no `unshare`; an older vivarium wrote it")
     why = userns_works()
     if why is not None:
         raise NamespaceError(f"this run needs a user namespace, and making one failed ({why}); {FIX}")

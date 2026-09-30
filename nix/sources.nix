@@ -20,7 +20,7 @@
 # else -- CI, a developer, the umbrella -- takes this one.
 let
   # Where this checkout sits. Inside the umbrella, whether that umbrella is a
-  # working copy or a pinned store path, this is `<umbrella>/user-mode-nixos`.
+  # working copy or a pinned store path, this is `<umbrella>/vivarium`.
   # Fetched on its own, it is a store path with nothing above it.
   root = toString ../.;
 
@@ -50,7 +50,7 @@ let
   # UMBRELLA_REV names it, and that is what makes two jobs of one CI run
   # agree. `ci/walkback.sh` computes it: the umbrella that locks the nearest
   # landed ancestor of HEAD, read from the umbrella remote refs named
-  # `refs/umbrella/user-mode-nixos/*`. `umbrella mark` publishes them.
+  # `refs/umbrella/vivarium/*`. `umbrella mark` publishes them.
   #
   # Before umbrella 0.1.0 this fell back to an unlocked
   # `github:nixidae/nixidae`, which resolves the head of the default branch at
@@ -69,7 +69,7 @@ let
   # revision marker, so an expression inside it cannot learn its own revision
   # or its own url. Measured: `builtins.readDir` of a fetched tree lists the
   # source files and nothing else. A consumer that took this repository as
-  # `github:Lillecarl/user-mode-nixos`, a release tarball, or a pull request from a
+  # `github:Lillecarl/vivarium`, a release tarball, or a pull request from a
   # fork could not resolve a pin held in a ref. GitHub copies `refs/heads`
   # and tags to a fork, and not a custom ref namespace. A file is in the
   # tree, so every one of those reads it.
@@ -106,13 +106,13 @@ let
       # mapping ref could not fall back when that ref is absent. The lookup
       # belongs outside Nix, in `ci/walkback.sh`.
       throw ''
-        nix/sources.nix: no umbrella to build user-mode-nixos against.
+        nix/sources.nix: no umbrella to build vivarium against.
 
         Set UMBRELLA_REV, or write an umbrella revision into
         nix/umbrella.rev. This prints the umbrella that locks the
         nearest landed ancestor of HEAD:
 
-          ci/walkback.sh https://github.com/nixidae/nixidae user-mode-nixos
+          ci/walkback.sh https://github.com/nixidae/nixidae vivarium
 
         umbrella 0.1.0 removed the arm that fell back to the head of the
         umbrella default branch. That arm was unlocked, so one commit of
@@ -126,4 +126,4 @@ let
     else
       (builtins.fetchTree (builtins.parseFlakeRef umbrellaRef)).outPath + "/nix/wire.nix";
 in
-import wire { overrides.user-mode-nixos = ../.; }
+import wire { overrides.vivarium = ../.; }

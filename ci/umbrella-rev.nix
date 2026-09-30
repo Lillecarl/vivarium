@@ -46,7 +46,7 @@ let
       {
         id = "resolve";
         name = "Resolve the umbrella revision";
-        run = "ci/walkback.sh https://github.com/nixidae/nixidae user-mode-nixos | sed 's/^/rev=/' >> \"$GITHUB_OUTPUT\"";
+        run = "ci/walkback.sh https://github.com/nixidae/nixidae vivarium | sed 's/^/rev=/' >> \"$GITHUB_OUTPUT\"";
       }
     ];
   };
