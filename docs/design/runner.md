@@ -104,15 +104,19 @@ The long record up to 2026-09-30 is `history/running-anywhere.md`.
    NixOS module adds a script to the run. The run would collect it from
    each guest's evaluated configuration.
 7. **Is a phase a systemd unit?** (Carl's idea.) Most work runs in the
-   guests under systemd, and the host waits and checks. With static peer
-   facts, Kubernetes needs no host choreography: the control plane runs
-   `kubeadm init --token T`, and a worker's unit retries `kubeadm join
-   <cp> --token T` until the API server answers.
-8. **Distributed events between guests** (Carl's idea, after Salt's
-   event bus on ZeroMQ). A guest emits an event, and any guest can wait
-   for it, for software that does not retry by itself. Open: whether
-   ZeroMQ between guests carries it, or the runner relays it over the
-   agent channel it already has.
+   guests under systemd, and the host waits and checks. A unit that
+   needs another guest to be ready waits for a file that the runner
+   writes, not for a retry to succeed: a worker's `kubeadm join` unit
+   starts only when a join token file exists, and the runner writes that
+   file through the agent once the control plane is ready.
+
+## Decided, not built yet
+
+- **Distributed events between guests**, after Salt's event bus. A
+  guest emits an event and any guest can wait for one. The runner relays
+  them over the agent channel it already has, so every event is in
+  `events.jsonl` and no guest needs a network or a new library. Built
+  when the first test needs it.
 
 ## Not measured
 
