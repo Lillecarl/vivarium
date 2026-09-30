@@ -118,6 +118,7 @@ def oci_config(
     subuid: Range | None,
     subgid: Range | None,
     writable_store: bool = True,
+    store_view: bool = False,
 ) -> dict:
     """The ``config.json`` for one guest.
 
@@ -131,6 +132,9 @@ def oci_config(
     Without ``writable_store``, ``/nix/store`` is the host's, bound
     read-only and recursively: the sandbox's store is one bind mount per
     input, and an overlay does not see a lower's submounts.
+
+    With ``store_view``, *store* is the guest's writable store view
+    (``storeview.build``), bound in as it is: it holds its own binds.
     """
     mounts = [
         _fs("proc", "/proc", "nosuid", "noexec", "nodev"),
@@ -179,8 +183,8 @@ def oci_config(
                 "userxattr",
             ],
         }
-        if writable_store
-        else _bind(f"{store}/store", "/nix/store", "ro"),
+        if writable_store and not store_view
+        else _bind(f"{store}/store", "/nix/store", "rw" if store_view else "ro"),
         _bind(str(agent_dir), AGENT_DIR, "rw"),
     ]
     if artifacts is not None:

@@ -3,7 +3,8 @@
 A tmpfs with one read-only bind per path, made read-only as a whole in
 one `mount_setattr` call. hostfs and virtiofsd walk paths, so they cross
 the binds and a guest sees one filesystem; the guest puts its writable
-overlay on top inside its own kernel.
+overlay on top inside its own kernel. A container guest gets the
+writable form instead; see `build`.
 
 Needs root of a mount namespace: `uml run` enters one first
 (`uml/namespace.py`). Direct syscalls, because a `mount` process per path
@@ -60,14 +61,14 @@ def _mount(source: str, target: Path, fstype: str | None, flags: int) -> None:
     )
 
 
-def _read_only(path: Path) -> None:
+def _read_only(path: Path, *, recursive: bool) -> None:
     attr = _MountAttr(attr_set=_MOUNT_ATTR_RDONLY)
     _check(
         _libc.syscall(
             _SYS_MOUNT_SETATTR,
             _AT_FDCWD,
             str(path).encode(),
-            _AT_RECURSIVE,
+            _AT_RECURSIVE if recursive else 0,
             ctypes.byref(attr),
             ctypes.sizeof(attr),
         ),
@@ -80,14 +81,24 @@ def read_paths(store_paths: Path) -> list[str]:
     return [line for line in store_paths.read_text().splitlines() if line]
 
 
-def build(root: Path, paths: Iterable[str]) -> Path:
+def build(root: Path, paths: Iterable[str], *, writable: bool = False) -> Path:
     """Make *root*/store the view of *paths*; return *root*.
 
     *root* is what a backend serves as the guest's `/nix`.
+
+    Read-only: a tmpfs, read-only as a whole; a VM guest overlays it in
+    its own kernel. Writable, for a container guest, whose overlay would
+    be on the host and see none of the binds: nixkube's layout. A
+    directory on disk holds the binds, each read-only, and new paths go
+    beside them. It is bound onto itself, so one detach still removes it.
     """
     store = root / "store"
     store.mkdir(parents=True)
-    _mount("tmpfs", store, "tmpfs", 0)
+    if writable:
+        _mount(str(store), store, None, _MS_BIND)
+        store.chmod(0o1775)
+    else:
+        _mount("tmpfs", store, "tmpfs", 0)
     for path in paths:
         source = Path(path)
         target = store / source.name
@@ -99,7 +110,10 @@ def build(root: Path, paths: Iterable[str]) -> Path:
         else:
             target.touch()
         _mount(path, target, None, _MS_BIND)
-    _read_only(store)
+        if writable:
+            _read_only(target, recursive=False)
+    if not writable:
+        _read_only(store, recursive=True)
     return root
 
 

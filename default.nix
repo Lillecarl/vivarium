@@ -946,13 +946,14 @@ let
     };
 
     /*
-      Does each guest see only its own closure, on both backends that get
-      a store view, and can it still add paths?
+      Does each guest see only its own closure, on every backend, and can
+      it still add paths?
     */
     store-view = mkSession {
       name = "store-view";
       nodes.u.boot.uml.backend = "uml";
       nodes.q.boot.uml.backend = "qemu";
+      nodes.c.boot.uml.backend = "container";
       phases.view = {
         script = ./tests/phases/store-view.py;
         after = [ "boot" ];

@@ -88,12 +88,6 @@ class Toolchain:
         )
 
 
-VIEWED = frozenset({"uml", "qemu"})
-"""Backends whose guests get a store view. A container guest overlays its
-store on the host, and an overlay does not see the binds a view is made
-of."""
-
-
 @dataclass(frozen=True)
 class MachineSpec:
     """What Nix knows about a guest; see ``mkTest`` in flake.nix."""
@@ -284,9 +278,11 @@ class Machine:
             return
 
         self._rundir = Path(tempfile.mkdtemp(prefix=f"uml-{self.name}-"))
-        if self.spec.store_paths is not None and self.spec.backend in VIEWED:
+        if self.spec.store_paths is not None:
             view = storeview.build(
-                self._rundir / "nix", storeview.read_paths(self.spec.store_paths)
+                self._rundir / "nix",
+                storeview.read_paths(self.spec.store_paths),
+                writable=self.spec.backend == "container",
             )
             self.spec = replace(self.spec, store=str(view))
         self._agent_sock, self._guest_sock = socket.socketpair(
