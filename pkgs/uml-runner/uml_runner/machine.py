@@ -315,6 +315,9 @@ class Machine:
 
         self._process = await subprocess.create_subprocess_exec(
             *launch.argv,
+            # Never the runner's stdin: a UML console reads it, and took
+            # the input meant for `--interactive`'s REPL (measured).
+            stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             env=launch.env or None,
