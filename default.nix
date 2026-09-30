@@ -923,6 +923,29 @@ let
         '';
 
     /*
+      Does every guest import `defaults`, and know each peer by name?
+
+      No guest names another in its own configuration: /etc/hosts comes
+      from the `nodes` every guest receives, as in nixos-test.
+    */
+    peers = mkSession {
+      name = "peers";
+      defaults.environment.etc."uml-defaults".text = "from-defaults\n";
+      nodes.server.boot.uml.lan = {
+        network = "peers";
+        address = "192.168.99.2/24";
+      };
+      nodes.client.boot.uml.lan = {
+        network = "peers";
+        address = "192.168.99.3/24";
+      };
+      phases.peers = {
+        script = ./tests/phases/peers.py;
+        after = [ "boot" ];
+      };
+    };
+
+    /*
       Can a suite that has to run inside a guest report like one that
       runs on the host?
 

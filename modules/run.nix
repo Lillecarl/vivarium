@@ -75,6 +75,17 @@ in
       '';
     };
 
+    defaults = mkOption {
+      type = types.deferredModule;
+      default = { };
+      description = ''
+        A NixOS module every guest imports, beside its own entry in
+        `nodes`. A reusable module goes here. An option that must differ
+        between guests takes no default in it, so each guest sets it or
+        evaluation fails.
+      '';
+    };
+
     backend = mkOption {
       type = types.enum [
         "uml"

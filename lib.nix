@@ -242,6 +242,26 @@ rec {
         tun = lib.any (machine: machine.boot.uml.lan.network != null) containers;
       };
 
+  /*
+    Every peer that has a `vec1` address, by hostname, in each guest's
+    /etc/hosts. nixos-test writes the same from its `nodes`.
+  */
+  peersModule =
+    { lib, nodes, ... }:
+    {
+      networking.hosts = lib.mkMerge (
+        lib.mapAttrsToList (
+          _: peer:
+          let
+            address = peer.boot.uml.lan.address;
+          in
+          lib.optionalAttrs (address != null) {
+            ${lib.head (lib.splitString "/" address)} = [ peer.networking.hostName ];
+          }
+        ) nodes
+      );
+    };
+
   # A guest: an ordinary NixOS configuration plus ./modules.
   #
   # `eval-config.nix` and not `lib.nixosSystem`. That name only exists on the
@@ -591,17 +611,34 @@ rec {
 
       settingsFile = pkgs.writeText "uml-${name}-settings.json" (builtins.toJSON checkedConfig.settings);
 
-      machines = lib.imap0 (
-        index: hostName:
-        (mkNode {
-          imports = [ checkedConfig.nodes.${hostName} ];
-          networking.hostName = lib.mkDefault hostName;
-          boot.uml.sshPort = lib.mkDefault (4325 + index);
-          boot.uml.backend = lib.mkDefault backend;
-          boot.uml.index = index;
-          boot.uml.nixDatabase.extraRoots = lib.optional (checkedConfig.settings != { }) "${settingsFile}";
-        }).config
-      ) (lib.attrNames checkedConfig.nodes);
+      /*
+        Every guest, evaluated, by name. Each one receives all of them as
+        the module argument `nodes`, as in nixos-test, so a guest may read
+        static facts about its peers: a name, an address, a secret written
+        in Nix. Lazy, so a guest reading a peer's address is no cycle.
+      */
+      evaluated = lib.listToAttrs (
+        lib.imap0 (
+          index: hostName:
+          lib.nameValuePair hostName (mkNode {
+            imports = [
+              checkedConfig.defaults
+              checkedConfig.nodes.${hostName}
+              peersModule
+            ];
+            _module.args.nodes = nodes;
+            networking.hostName = lib.mkDefault hostName;
+            boot.uml.sshPort = lib.mkDefault (4325 + index);
+            boot.uml.backend = lib.mkDefault backend;
+            boot.uml.index = index;
+            boot.uml.nixDatabase.extraRoots = lib.optional (checkedConfig.settings != { }) "${settingsFile}";
+          })
+        ) (lib.attrNames checkedConfig.nodes)
+      );
+
+      nodes = lib.mapAttrs (_: node: node.config) evaluated;
+
+      machines = map (hostName: nodes.${hostName}) (lib.attrNames checkedConfig.nodes);
 
       first = lib.head machines;
 
@@ -725,7 +762,7 @@ rec {
     pkgs.runCommand "uml-session-${name}"
       {
         passthru = {
-          inherit attempt spec;
+          inherit attempt spec nodes;
           run = runner;
           phases = lister;
           config = checkedConfig;
