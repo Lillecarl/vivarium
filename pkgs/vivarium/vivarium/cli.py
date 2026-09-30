@@ -110,6 +110,15 @@ def parse(argv: list[str] | None = None) -> argparse.Namespace:
         help="pause when a phase fails, with the guests up and the state intact",
     )
     run.add_argument(
+        "--no-control",
+        dest="control",
+        action="store_false",
+        help=(
+            "serve no control socket. For a sandboxed check, where nobody"
+            " can reach in and a socket left by a killed run fails the output"
+        ),
+    )
+    run.add_argument(
         "--serial",
         action="store_true",
         help=(
@@ -290,6 +299,7 @@ async def run(args: argparse.Namespace) -> int:
                 break_on_start=args.break_on_start or args.interactive,
                 interactive=args.interactive,
                 serial=args.serial,
+                control=args.control,
             )
             group.cancel_scope.cancel()
         if session.stopped_by is not None:
@@ -322,6 +332,7 @@ async def drive(
     break_on_start: bool = False,
     interactive: bool = False,
     serial: bool = False,
+    control: bool = True,
 ) -> None:
     """Boot, run what is pending, write the evidence, put the guests down.
 
@@ -331,21 +342,22 @@ async def drive(
 
     The guests' journals stream beside it for the whole drive, a pause
     included: a guest left up after a failure keeps logging, and that is
-    often what explains the failure. The control socket exists only when
-    a breakpoint was asked for.
+    often what explains the failure. The control socket exists for the
+    whole drive unless `control` is false, so `exec` reaches a run that
+    never pauses.
     """
-    wanted = breaks or break_on_failure or break_on_start or interactive
-    control = Controller(session) if wanted else None
+    wanted = control or breaks or break_on_failure or break_on_start or interactive
+    controller = Controller(session) if wanted else None
     async with anyio.create_task_group() as group:
         group.start_soon(session.follow)
-        if control is not None:
-            await group.start(control.serve)
+        if controller is not None:
+            await group.start(controller.serve)
             if interactive:
-                group.start_soon(repl.serve, control)
+                group.start_soon(repl.serve, controller)
         try:
             await _sequence(
                 session,
-                control,
+                controller,
                 set(breaks),
                 break_on_failure,
                 serial,

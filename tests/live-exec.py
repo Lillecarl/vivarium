@@ -1,9 +1,10 @@
 """Does `exec` reach a run that is running, not paused?
 
-Starts `vivarium run` with one phase, `live`, that holds until /tmp/go
-exists in its guest. Nothing in the run makes that file: only an `exec`
-sent while the phase runs does, so a passing run is the proof. `run`,
-`pytest` and `continue` must still be refused while nothing is paused.
+Starts `vivarium run`, with no breakpoint, and one phase, `live`, that
+holds until /tmp/go exists in its guest. Nothing in the run makes that
+file: only an `exec` sent while the phase runs does, so a passing run is
+the proof. `run`, `pytest` and `continue` must still be refused while
+nothing is paused.
 
     live-exec VIVARIUM SPEC WORKDIR
 """
@@ -39,7 +40,7 @@ def main() -> None:
 
     with log.open("w") as sink:
         runner = subprocess.Popen(
-            [vivarium, "run", "--spec", spec, "--out", str(out), "--break-on-failure"],
+            [vivarium, "run", "--spec", spec, "--out", str(out)],
             stdout=sink,
             stderr=subprocess.STDOUT,
         )

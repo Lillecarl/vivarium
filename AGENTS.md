@@ -73,7 +73,8 @@ out of `status` and `junit.xml`. Each pytest run drops the modules it
 loaded from its tests directory when it ends; pytest's importlib mode
 would otherwise hand the next run the old module. Every
 operation and its output is an event. The socket is `<out>/control.sock`,
-mode 0600, and exists only when a breakpoint was asked for.
+mode 0600, and exists for every run except a sandboxed check, which
+passes `--no-control`.
 `vivarium/control.py` is the whole of it; `nix build --file . breakpoint`
 drives it against a guest.
 

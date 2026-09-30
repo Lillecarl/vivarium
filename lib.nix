@@ -509,7 +509,9 @@ rec {
 
         The same `vivarium run` the developer gets, with `--out` pointed at the
         derivation's own output. Nothing branches on being in a sandbox,
-        which is what stops the two drifting.
+        which is what stops the two drifting. `--no-control` is the one
+        flag it adds: nobody can reach in here, and a socket left in
+        `$out` by a killed run would fail the output.
       */
       probe = probeFor machines;
       attempt =
@@ -525,7 +527,7 @@ rec {
             # A dependency, so a sandbox that cannot run a container guest
             # fails there, in seconds and by name, before this boots one.
             ${lib.optionalString (probe != null) ''cp ${probe} "$out/probe"''}
-            ${vivarium} run --spec ${spec} --out "$out" || true
+            ${vivarium} run --spec ${spec} --out "$out" --no-control || true
             test -f "$out/status" || echo 1 > "$out/status"
           '';
     in

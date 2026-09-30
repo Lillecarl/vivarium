@@ -9,6 +9,7 @@ somebody notices.
 
 import contextlib
 import io
+import tempfile
 from pathlib import Path
 
 import anyio
@@ -25,11 +26,12 @@ class FakeSession:
     """Enough of a session to drive, and a record of what was called."""
 
     def __init__(
-        self, *, boot_error: Exception | None = None, out: Path = Path("/nonexistent")
+        self, *, boot_error: Exception | None = None, out: Path | None = None
     ) -> None:
         self.spec = Spec(machines=[], phases=[PhaseSpec(name="one", script=Path("x"))])
         self.state: dict[str, PhaseState] = {"one": PhaseState.PENDING}
-        self.out = out
+        # Somewhere real: every drive serves its control socket there.
+        self.out = out or Path(tempfile.mkdtemp(prefix="fake-session-"))
         self.vms = None
         self.errors: dict[str, str] = {}
         self.ran: list[str] = []
@@ -245,9 +247,21 @@ class TestBreakpoints:
             assert (await request(socket, Op.CONTINUE)).ok
         assert session.ran == ["one"]
 
-    async def test_no_socket_without_a_breakpoint(self, tmp_path: Path):
+    @pytest.mark.parametrize("control", [True, False])
+    async def test_a_socket_without_a_breakpoint_unless_turned_off(
+        self, tmp_path: Path, control: bool
+    ):
         session = FakeSession(out=tmp_path)
-        await drive(session)
+        seen: list[bool] = []
+
+        async def look(phase: PhaseSpec) -> PhaseState:
+            seen.append((tmp_path / SOCKET).exists())
+            session.state[phase.name] = PhaseState.PASSED
+            return PhaseState.PASSED
+
+        session.run = look  # ty: ignore[invalid-assignment]
+        await drive(session, control=control)
+        assert seen == [control]
         assert not (tmp_path / SOCKET).exists()
 
 

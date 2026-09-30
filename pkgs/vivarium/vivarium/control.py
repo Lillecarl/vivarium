@@ -18,7 +18,8 @@ The operations are the MCP server's tools as well; it is one more
 client of `<out>/control.sock`.
 
 **The socket runs arbitrary code as the user who started the run.** It
-is created mode 0600 in the output directory.
+is created mode 0600 in the output directory. A sandboxed check runs
+with `--no-control` and has none.
 
 Every operation is an event, code included, so `events.jsonl` says
 what was done to the guests by hand and not only what the phases did.
