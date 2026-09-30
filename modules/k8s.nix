@@ -14,7 +14,7 @@
 }:
 let
   cfg = config.services.vivarium-k8s;
-  images = pkgs.callPackage ./k8s-images.nix { };
+  images = pkgs.callPackage ./k8s-images.nix { inherit (cfg) imageTags; };
 
   kubernetes = pkgs.kubernetes;
   # The unit that serves the CRI, and where. `vivarium-k8s-cri.target` names the
@@ -43,6 +43,13 @@ let
 
   # kubeadm takes extraArgs as a list of name/value pairs from v1beta4 on.
   args = lib.mapAttrsToList (name: value: { inherit name value; });
+
+  # The `--feature-gates` value both kubeadm's control-plane components and
+  # kubelet read.  Empty when the option is, so nothing is written for a test
+  # that names no gate.
+  featureGatesArg = lib.concatStringsSep "," (
+    lib.mapAttrsToList (name: value: "${name}=${lib.boolToString value}") cfg.featureGates
+  );
 
   /*
     YAML 1.2, and not `pkgs.formats.yaml`, which is 1.1.
@@ -204,26 +211,33 @@ let
     }
   );
 
-  clusterConfig = yaml.generate "kubeadm-cluster.yaml" {
-    apiVersion = "kubeadm.k8s.io/v1beta4";
-    kind = "ClusterConfiguration";
-    # Pinned, or kubeadm asks dl.k8s.io what "stable" means and a
-    # sandboxed guest waits out the DNS timeout before failing.
-    kubernetesVersion = "v${kubernetes.version}";
-    networking = {
-      inherit (cfg) podSubnet serviceSubnet;
-    };
-    etcd.local = {
-      dataDir = "/var/lib/etcd";
-      # etcd measures the cluster in disk latency, and a UML block device
-      # is slow enough that the defaults cost it an election every few
-      # minutes.
-      extraArgs = args {
-        heartbeat-interval = "500";
-        election-timeout = "5000";
+  clusterConfig = yaml.generate "kubeadm-cluster.yaml" (
+    {
+      apiVersion = "kubeadm.k8s.io/v1beta4";
+      kind = "ClusterConfiguration";
+      # Pinned, or kubeadm asks dl.k8s.io what "stable" means and a
+      # sandboxed guest waits out the DNS timeout before failing.
+      kubernetesVersion = "v${kubernetes.version}";
+      networking = {
+        inherit (cfg) podSubnet serviceSubnet;
       };
-    };
-  };
+      etcd.local = {
+        dataDir = "/var/lib/etcd";
+        # etcd measures the cluster in disk latency, and a UML block device
+        # is slow enough that the defaults cost it an election every few
+        # minutes.
+        extraArgs = args {
+          heartbeat-interval = "500";
+          election-timeout = "5000";
+        };
+      };
+    }
+    // lib.optionalAttrs (cfg.featureGates != { }) {
+      apiServer.extraArgs = args { feature-gates = featureGatesArg; };
+      controllerManager.extraArgs = args { feature-gates = featureGatesArg; };
+      scheduler.extraArgs = args { feature-gates = featureGatesArg; };
+    }
+  );
 
   kubeletConfig = yaml.generate "kubeadm-kubelet.yaml" (
     {
@@ -279,6 +293,7 @@ let
       once.
     */
     // lib.optionalAttrs (lib.elem "coredns" cfg.skipAddons) { clusterDNS = [ ]; }
+    // lib.optionalAttrs (cfg.featureGates != { }) { inherit (cfg) featureGates; }
   );
 
   proxyConfig = yaml.generate "kubeadm-proxy.yaml" {
@@ -625,6 +640,22 @@ in
       '';
     };
 
+    featureGates = lib.mkOption {
+      type = lib.types.attrsOf lib.types.bool;
+      default = { };
+      example = {
+        CgroupOptions = true;
+      };
+      description = ''
+        Feature gates for kube-apiserver, kube-controller-manager,
+        kube-scheduler and kubelet, as `Name = true|false`.
+
+        Empty writes nothing, so a test that names no gate is unchanged.
+        kubelet reads them from its KubeletConfiguration, which kubeadm also
+        stores for the workers to fetch, so one entry reaches every node.
+      '';
+    };
+
     nri = lib.mkOption {
       type = lib.types.bool;
       default = false;
@@ -705,6 +736,24 @@ in
         subject is what a real cluster does with an unmodified node --
         anything that would otherwise pass because this module had already
         put `/nix` in every container.
+      '';
+    };
+
+    imageTags = lib.mkOption {
+      type = lib.types.attrsOf lib.types.str;
+      default = { };
+      example = {
+        etcd = "3.7.1-0";
+        coredns = "v1.14.7";
+      };
+      description = ''
+        Overrides for the etcd, CoreDNS and pause image tags kubeadm looks
+        up, keyed `etcd`, `coredns` and `pause`.
+
+        The defaults track the Kubernetes nixpkgs carries.  A node built
+        from a different Kubernetes names different tags for etcd and
+        CoreDNS, and an image tagged for the wrong one is a pod stuck in
+        `ErrImagePull`; see `k8s-images.nix`.
       '';
     };
 

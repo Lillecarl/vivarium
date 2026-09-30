@@ -27,6 +27,10 @@
   conntrack-tools,
   ethtool,
   pkgsStatic,
+  # Overrides for the tags below.  A Kubernetes newer than the one these
+  # were pinned for names different etcd and CoreDNS tags, and the images
+  # are looked up by tag -- see `services.vivarium-k8s.imageTags`.
+  imageTags ? { },
 }:
 let
   version = kubernetes.version;
@@ -47,7 +51,7 @@ let
     coredns = "v1.14.6";
     etcd = "3.7.0-0";
     pause = "3.10.2";
-  };
+  } // imageTags;
 
   /*
     One image: *command*, and whatever it shells out to, as symlinks.
