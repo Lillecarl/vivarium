@@ -153,8 +153,11 @@ class TestTheJournalFollower:
 async def until_paused(socket: Path) -> None:
     with anyio.fail_after(5):
         while True:
-            if socket.exists() and (await request(socket, Op.STATE)).result == "paused":
-                return
+            # The file exists from bind(), a moment before listen(): a
+            # connect in between is refused. Measured on a loaded host.
+            with contextlib.suppress(ConnectionRefusedError):
+                if socket.exists() and (await request(socket, Op.STATE)).result == "paused":
+                    return
             await anyio.sleep(0.01)
 
 
