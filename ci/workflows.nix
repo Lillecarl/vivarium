@@ -208,7 +208,7 @@ let
       {
         name = "Run k8s-pull: a node that pulls its images, on a virtual machine";
         timeout-minutes = 20;
-        run = "nix run --print-build-logs --file . k8s-pull.driver";
+        run = "nix run --print-build-logs --file . k8s-pull.driver -- --out ./out";
       }
     ];
   };
