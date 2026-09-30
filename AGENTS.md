@@ -61,7 +61,10 @@ vivarium ctl --out ./o continue
 ```
 
 In scope for `exec`: `session`, `vms`, each guest by name, `anyio`.
-`exec`, `inject`, `pytest` and `run` are refused unless the run is paused.
+`exec` and `inject` also work while phases run, beside them: their
+prints go to the reply by task, and the agent channel multiplexes
+calls. `pytest`, `run` and `continue` are refused unless the run is
+paused.
 
 `pytest` is the loop for a pytest phase: edit a test, send it again,
 against guests a long setup already built. It takes only its own

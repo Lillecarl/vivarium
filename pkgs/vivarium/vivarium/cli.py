@@ -150,7 +150,7 @@ def parse(argv: list[str] | None = None) -> argparse.Namespace:
     phases = sub.add_parser("phases", help="list the phases and exit")
     phases.add_argument("--spec", type=Path, required=True)
 
-    ctl = sub.add_parser("ctl", help="reach into a run that is paused at a breakpoint")
+    ctl = sub.add_parser("ctl", help="reach into a run: exec and inject any time, the rest while paused")
     ctl.add_argument("--out", type=Path, required=True, help="the run's --out")
     ctl.add_argument("op", choices=[str(op) for op in Op])
     ctl.add_argument(
@@ -412,8 +412,8 @@ async def _schedule(
 
     **A pause waits for quiet.** A breakpoint or a failure stops new
     phases, and the pause begins when the running ones have ended. So
-    paused always means nothing is running, and `exec` never races a phase
-    on the same guest.
+    paused always means nothing is running, and `run` or `pytest` by hand
+    never races a phase. `exec` and `inject` may: the caller asked for it.
     """
     every = frozenset(machine["name"] for machine in session.spec.machines)
     running: dict[str, PhaseSpec] = {}
@@ -472,7 +472,7 @@ async def _schedule(
 
 
 async def ctl(args: argparse.Namespace) -> int:
-    """One request to a paused run; its output, its value, its error."""
+    """One request to a run; its output, its value, its error."""
     arg = sys.stdin.read() if args.arg == "-" else args.arg
     if args.op == Op.PYTEST:
         # `vivarium ctl --out o pytest ./tests -- -k x`, as `vivarium run` takes them.

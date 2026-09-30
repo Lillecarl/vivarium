@@ -58,11 +58,12 @@ INSTRUCTIONS: Final = """\
 Runs NixOS guests under vivarium and lets you reach into them.
 
 `start` launches a run in the background and returns its id at once; it
-pauses on the first failing phase with the guests still up. While paused,
-`exec` runs Python against the live guests (top-level await; `vms`,
-`session` and each guest by name are in scope, and names persist between
-calls), `inject` runs a local file's `async def test(vms)`, `run_pytest`
-runs local pytest tests, `run_phase` runs a declared phase, and `resume`
+pauses on the first failing phase with the guests still up. `exec` runs
+Python against the live guests (top-level await; `vms`, `session` and
+each guest by name are in scope, and names persist between calls), and
+`inject` runs a local file's `async def test(vms)`; both work while
+phases run, not only while paused. While paused, `run_pytest` runs local
+pytest tests, `run_phase` runs a declared phase, and `resume`
 continues. `inject` and `run_pytest` read the file each time, so the loop
 for a failing test is: edit it, send it again, against the same guests.
 `events` queries the run's event stream: filter by kind (journal, case,
@@ -448,15 +449,16 @@ def build(runs_holder: list[Runs]) -> FastMCP:
 
     @server.tool(name="exec")
     async def exec_(run: str, code: str) -> dict[str, Any]:
-        """Run Python in the paused run. Top-level await; `vms`, `session` and
-        each guest by name are in scope; names persist between calls. The
-        last expression's repr is `result`."""
+        """Run Python in the run, paused or running. Top-level await;
+        `vms`, `session` and each guest by name are in scope; names
+        persist between calls. The last expression's repr is `result`."""
         return _reply(await request(runs().get(run).socket, Op.EXEC, code))
 
     @server.tool()
     async def inject(run: str, path: str) -> dict[str, Any]:
-        """Run a local file's `async def test(vms)` in the paused run, read
-        fresh from disk, so an edit takes effect by injecting it again."""
+        """Run a local file's `async def test(vms)` in the run, paused or
+        running, read fresh from disk, so an edit takes effect by
+        injecting it again."""
         return _reply(await request(runs().get(run).socket, Op.INJECT, os.path.abspath(path)))
 
     @server.tool()

@@ -7,6 +7,8 @@ guest that is not stopped is a UML kernel spinning on a core until
 somebody notices.
 """
 
+import contextlib
+import io
 from pathlib import Path
 
 import anyio
@@ -43,6 +45,9 @@ class FakeSession:
 
     def _replay(self, lines: int = 20) -> None:
         self.said.append("replay")
+
+    def _capture(self, phase: str | None = None, copy: io.StringIO | None = None):
+        return contextlib.redirect_stdout(copy) if copy is not None else contextlib.nullcontext()
 
     async def boot(self) -> None:
         self.booted = True
@@ -196,8 +201,9 @@ class TestBreakpoints:
             await request(socket, Op.CONTINUE)
         assert session.torn_down
 
-    async def test_nothing_but_state_while_running(self, tmp_path: Path):
-        """Two things driving the same guests at once is a race."""
+    async def test_exec_while_running_and_nothing_that_needs_a_pause(self, tmp_path: Path):
+        """`exec` runs beside a phase. `run`, `pytest` and `continue` are
+        the scheduler's business, and wait for a pause."""
         session = FakeSession(out=tmp_path)
         started = anyio.Event()
         release = anyio.Event()
@@ -213,9 +219,13 @@ class TestBreakpoints:
         async with anyio.create_task_group() as group:
             group.start_soon(lambda: drive(session, break_on_failure=True))
             await started.wait()
-            reply = await request(socket, Op.EXEC, "1")
-            assert not reply.ok
-            assert "only while paused" in (reply.error or "")
+            reply = await request(socket, Op.EXEC, "print('beside'); 1")
+            assert reply.ok, reply.error
+            assert (reply.output, reply.result) == ("beside\n", "1")
+            for op, arg in ((Op.RUN, "one"), (Op.PYTEST, str(tmp_path)), (Op.CONTINUE, "")):
+                reply = await request(socket, op, arg)
+                assert not reply.ok
+                assert "only while paused" in (reply.error or "")
             release.set()
 
     async def test_a_deep_output_directory_still_pauses(self, tmp_path: Path):

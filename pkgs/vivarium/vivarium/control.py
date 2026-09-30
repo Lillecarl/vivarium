@@ -5,7 +5,8 @@ changing a guest costs a new image. So the fast loop does neither: the
 run pauses at a breakpoint with the guests up, and Python is sent into
 it. `exec` runs code with top-level `await`, `inject` runs a file from
 the working tree, `pytest` runs tests from it, `run` runs a declared
-phase, `continue` resumes.
+phase, `continue` resumes. `exec` and `inject` also reach a run that is
+not paused, beside the phases that are running.
 
     uml run --spec s --out o --break check
     uml ctl --out o exec 'await one.succeed("systemctl --failed")'
@@ -17,8 +18,7 @@ The operations are the MCP server's tools as well; it is one more
 client of `<out>/control.sock`.
 
 **The socket runs arbitrary code as the user who started the run.** It
-is created mode 0600 in the output directory, and only when a
-breakpoint was asked for, so a sandboxed check never has one.
+is created mode 0600 in the output directory.
 
 Every operation is an event, code included, so `events.jsonl` says
 what was done to the guests by hand and not only what the phases did.
@@ -47,7 +47,8 @@ from .session import CasesFailed, load_phase
 from .spec import PytestSpec
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import Callable, Iterator
+    from contextlib import AbstractContextManager
 
     from anyio.abc import ByteStream, TaskStatus
 
@@ -125,15 +126,22 @@ class Console:
     next is the ordinary shape of poking at a failure.
     """
 
-    def __init__(self, namespace: dict[str, Any]) -> None:
+    def __init__(
+        self,
+        namespace: dict[str, Any],
+        capture: Callable[[io.StringIO], AbstractContextManager[object]] = contextlib.redirect_stdout,
+    ) -> None:
         self.namespace = namespace
+        # What sends a print to the reply. The session's, in a run: see
+        # `Session._capture`.
+        self.capture = capture
 
     async def execute(self, source: str) -> Reply:
         output = io.StringIO()
         flags = ast.PyCF_ALLOW_TOP_LEVEL_AWAIT
         try:
             body, last = split_last_expression(source)
-            with contextlib.redirect_stdout(output):
+            with self.capture(output):
                 await _run(compile(body, "<uml ctl>", "exec", flags=flags), self.namespace)
                 result = None
                 if last is not None:
@@ -192,15 +200,21 @@ async def _receive_line(stream: ByteStream) -> bytes:
 class Controller:
     """Serves the socket for a whole drive; pauses when told to.
 
-    `exec`, `inject` and `run` are refused while a phase is running.
-    Their output capture is process-wide, and two things driving the same
-    guests at once is a race nobody asked for.
+    `exec` and `inject` run at any time, beside the running phases: the
+    caller chose to touch those guests, and prints go to the reply by
+    task, not by swapping `sys.stdout`. `run` and `pytest` wait for a
+    pause, because the scheduler owns the phases and pytest is not
+    reentrant.
     """
+
+    ANY_TIME: Final = frozenset({Op.STATE, Op.EXEC, Op.INJECT})
 
     def __init__(self, session: Session) -> None:
         self.session = session
         self.path = session.out / SOCKET
-        self.console = Console(self._namespace())
+        self.console = Console(
+            self._namespace(), lambda copy: session._capture("exec", copy)
+        )
         self._resume: anyio.Event | None = None
         self._continuing = False
 
@@ -234,11 +248,7 @@ class Controller:
     async def pause(self, reason: str) -> None:
         """Hold the drive here until a client says `continue`."""
         self._resume = anyio.Event()
-        # The guests exist by now, so they join the namespace by name.
-        if self.session.vms is not None:
-            self.console.namespace.setdefault("vms", self.session.vms)
-            for name, vm in self.session.vms.items():
-                self.console.namespace.setdefault(name, vm)
+        self._bind_guests()
         self.session.emit(
             Kind.NOTE,
             f"paused {reason}; `vivarium ctl --out {self.session.out} continue` resumes",
@@ -251,6 +261,13 @@ class Controller:
         finally:
             self._resume = None
         self.session.emit(Kind.NOTE, "resumed")
+
+    def _bind_guests(self) -> None:
+        """`vms` and each guest by name, once the guests exist."""
+        if self.session.vms is not None:
+            self.console.namespace.setdefault("vms", self.session.vms)
+            for name, vm in self.session.vms.items():
+                self.console.namespace.setdefault(name, vm)
 
     async def _client(self, stream: ByteStream) -> None:
         async with stream:
@@ -276,8 +293,11 @@ class Controller:
         )
         if op is Op.STATE:
             return Reply(ok=True, state=self._state(), result="paused" if self.paused else "running")
-        if not self.paused:
+        if op not in self.ANY_TIME and not self.paused:
             return Reply(ok=False, error=f"{op} only while paused; the run is running")
+        if op is Op.INJECT and self.session.vms is None:
+            return Reply(ok=False, error="no guests are up yet")
+        self._bind_guests()
         if op is Op.CONTINUE:
             self._continuing = True
             return Reply(ok=True)
@@ -290,12 +310,9 @@ class Controller:
         return await self._run(arg)
 
     def _record(self, source: str, reply: Reply) -> Reply:
-        """What injected code printed and raised, into the event stream
-        as well as the reply: the record of a run includes what was done
-        to it by hand."""
-        for line in reply.output.splitlines():
-            if line.strip():
-                self.session.emit(Kind.OUTPUT, line, phase=source)
+        """What injected code raised, into the event stream as well as
+        the reply: the record of a run includes what was done to it by
+        hand. Its prints are events already, through `Session._capture`."""
         if reply.error:
             self.session.emit(Kind.ERROR, reply.error.rstrip(), level=Level.ERROR, phase=source)
         return reply
@@ -309,7 +326,7 @@ class Controller:
         output = io.StringIO()
         try:
             test = load_phase(Path(arg).expanduser().resolve())
-            with contextlib.redirect_stdout(output):
+            with self.session._capture(f"inject:{Path(arg).name}", output):
                 await test(self.session.vms)
         except Exception:  # noqa: BLE001 -- the injected code's failure is the reply
             return Reply(ok=False, output=output.getvalue(), error=traceback.format_exc())
@@ -359,8 +376,7 @@ class Controller:
 
     async def execute(self, source: str) -> Reply:
         """`exec`, from the REPL rather than the socket."""
-        if not self.paused:
-            return Reply(ok=False, error="only while paused; the run is running")
+        self._bind_guests()
         return self._record("exec", await self.console.execute(source))
 
     async def run_phase(self, name: str) -> str:

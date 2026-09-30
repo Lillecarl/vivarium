@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import contextlib
 import importlib.util
+import io
 import json
 import sys
 import time
@@ -63,6 +64,9 @@ class SessionError(RuntimeError):
 _PRINTING: ContextVar[str | None] = ContextVar("uml_printing", default=None)
 """The phase whose task is printing. See `Session._capture`."""
 
+_COPY: ContextVar[io.StringIO | None] = ContextVar("vivarium_copy", default=None)
+"""Where a task's prints also go: the reply to an `exec` or `inject`."""
+
 
 class _Lines:
     """`sys.stdout` while phases run: each line an event of its phase."""
@@ -72,6 +76,8 @@ class _Lines:
 
     def write(self, text: str) -> int:
         phase = _PRINTING.get()
+        if (copy := _COPY.get()) is not None:
+            copy.write(text)
         for line in text.splitlines():
             if line.strip():
                 self.emit(Kind.OUTPUT, line, phase=phase)
@@ -244,7 +250,7 @@ class Session:
         )
 
     @contextlib.contextmanager
-    def _capture(self, phase: str | None = None):
+    def _capture(self, phase: str | None = None, copy: io.StringIO | None = None):
         """Turn what a phase prints into events.
 
         A phase script says things with `print`, which is right -- asking
@@ -264,8 +270,13 @@ class Session:
         task, and a task has its own context. `redirect_stdout` per phase
         would restore the terminal when the first of two phases ended,
         under the other one still printing.
+
+        `copy` also receives the task's prints. Code sent through the
+        control socket runs beside the phases, so its reply cannot take
+        `sys.stdout` for itself either.
         """
         token = _PRINTING.set(phase)
+        copying = _COPY.set(copy)
         if self._captures == 0:
             self._stdout = sys.stdout
             sys.stdout = _Lines(self.emit)
@@ -276,6 +287,7 @@ class Session:
             self._captures -= 1
             if self._captures == 0:
                 sys.stdout = self._stdout
+            _COPY.reset(copying)
             _PRINTING.reset(token)
 
     def _replay(self, lines: int = 20, nodes: Collection[str] | None = None) -> None:
