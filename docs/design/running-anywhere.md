@@ -1260,6 +1260,65 @@
 19 Still open: whether the closure is the guests' closure or the whole
 19 input closure of the sandboxed attempt. The second one is what the
 19 sandbox really holds.
+20
+20 ### Round 20: measured on dynhetz
+20
+20 The spike is `spike/default.nix`, which is gitignored. Each line below
+20 is one attribute in it, for example `nix run --file spike uplink.view
+20 -- --out ./spike/out/view`. `variants` wraps any `mkSession`.
+20
+20 | question | answer | attribute |
+20 | --- | --- | --- |
+20 | user + mount namespace, host | yes | `probe.host` |
+20 | the same in a Nix build, plain and `uid-range` | yes, both | `probe.sandbox`, `probe.sandboxUidRange` |
+20 | virtiofsd over a bind view, `--sandbox none` and `namespace` | listens, all three places | `probe.*` |
+20 | a UML run, user namespaces refused (seccomp) | fails: passt exits 1 | `uplink.blocked` |
+20 | the same, passt replaced by a stub | boots and passes | `uplink.stubBlocked` |
+20 | a UML run in a view of its own closure | passes, passt nested | `uplink.view` |
+20 | what the guest sees, whole host store | 92699 entries, `hello` visible | `uplink.counted` |
+20 | what the guest sees, in the view | 510 entries, `hello` hidden | `uplink.countedView` |
+20
+20 What follows from it:
+20
+20 - **UML, hostfs and the agent need no user namespace. passt does.**
+20   passt says "Couldn't create user namespace" and exits. It has no
+20   option to skip that isolation. `--offline` still starts passt, to
+20   keep the forwards. So the level with no features is a UML guest with
+20   no uplink and no forwards, and the runner must be able to start a
+20   guest with no passt at all.
+20 - **The store view gives sandbox parity for UML.** The view of the
+20   runner's closure held 510 paths. The sandboxed attempt's inputs add
+20   stdenv, about 30 paths. Not yet run: QEMU with virtiofsd inside the
+20   view, which the probe only started.
+20 - **Binding costs about 6 ms a path from bash** (510 paths in 3.0 s,
+20   two `mount` processes each). A runner that calls `mount_setattr` and
+20   `open_tree` directly spawns no process. Not measured yet.
+20 - **UML fails at a soft limit of 1024 open files** (EMFILE in
+20   `start_userspace`). A `systemd-run --user` unit has that limit, and so
+20   do many login shells. The runner can raise its soft limit to the hard
+20   limit at start without privilege.
+20 - **Traps found in the spike.** A remount of the view's tmpfs re-parses
+20   its options, and `uid=1000` is not mapped in the namespace, so it
+20   fails. A bind remount does not. That bind must be recursive, or it
+20   hides every path bound under it.
+20 - **Where it depends on the host.** The kernel's
+20   `user.max_user_namespaces`, and on Ubuntu 24.04
+20   `kernel.apparmor_restrict_unprivileged_userns`. On dynhetz, Nix did
+20   not stop a build from making a nested namespace. Not measured: a
+20   GitHub runner, and Ubuntu.
+20
+20 Levels, from nothing to everything, each detected at start:
+20
+20 | level | needs | gives |
+20 | --- | --- | --- |
+20 | 0 | nothing | UML guests and the agent; no uplink; the whole host store (the LAN is not measured) |
+20 | 1 | a user namespace | passt uplink and forwards; a store view equal to the sandbox |
+20 | 2 | `/dev/kvm` | QEMU guests |
+20 | 3 | subordinate ids, a delegated cgroup | container guests |
+20
+20 Open: is the store view an output of its own, beside sandboxed and
+20 unsandboxed (Carl's reading), or a level-1 feature that an unsandboxed
+20 run turns on when it detects a user namespace?
 18
 1 ## What "any machine" means
 1
