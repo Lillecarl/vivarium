@@ -19,6 +19,13 @@ The long record up to 2026-09-30 is `history/running-anywhere.md`.
   dependents and nothing else. `always` runs a phase anyway. `nodes`
   names the guests a phase holds; phases with no common guest run at
   once.
+- **Every guest knows static facts about its peers**, as in nixos-test:
+  each guest's module gets `nodes`, and every guest's address is in
+  every `/etc/hosts`. A guest may name another guest, its address and
+  a secret shared in Nix (a fixed `kubeadm` token, for example). So
+  setups that retry by themselves form inside the guests, and the host
+  only waits and checks. This drops the rule in `modules/k8s.nix` that a
+  node knows only about itself.
 - **Recipes are modules** that add a phase, the guest configuration it
   needs and its knobs.
 - **Knobs are module options** that read the environment
@@ -97,16 +104,15 @@ The long record up to 2026-09-30 is `history/running-anywhere.md`.
    NixOS module adds a script to the run. The run would collect it from
    each guest's evaluated configuration.
 7. **Is a phase a systemd unit?** (Carl's idea.) Most work runs in the
-   guests under systemd. A control plane runs `kubeadm init` as soon as
-   it boots; a worker's unit waits until the control plane's unit has
-   passed. The host then waits and checks, and does not drive. Guests
-   must then ask each other about state: over a socket every guest can
-   reach, or through the runner, which already talks to each agent.
-   Conflict to settle: `modules/k8s.nix` opens with the rule that a node
-   knows only about itself, and the test handles what needs the other
-   nodes, so that "the same three lines describe a one-node cluster or a
-   five-node one". A worker that waits on a named control plane is a
-   reference to a peer, which that rule forbids.
+   guests under systemd, and the host waits and checks. With static peer
+   facts, Kubernetes needs no host choreography: the control plane runs
+   `kubeadm init --token T`, and a worker's unit retries `kubeadm join
+   <cp> --token T` until the API server answers.
+8. **Distributed events between guests** (Carl's idea, after Salt's
+   event bus on ZeroMQ). A guest emits an event, and any guest can wait
+   for it, for software that does not retry by itself. Open: whether
+   ZeroMQ between guests carries it, or the runner relays it over the
+   agent channel it already has.
 
 ## Not measured
 
