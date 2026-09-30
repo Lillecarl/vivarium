@@ -1,6 +1,8 @@
 # Working in this repo
 
 Read README.md first — it explains how the pieces fit together.
+docs/howto.md is the task-by-task user guide; keep it true when a
+command, flag or printed line changes.
 
 ## One function
 

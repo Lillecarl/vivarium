@@ -176,6 +176,10 @@ the default for every guest.
 It starts runs, pauses them on failure, and runs Python against the live
 guests. AGENTS.md describes the tools and the pause-and-inspect loop.
 
+An agent without MCP can use a run's own output: a run prints the
+command lines that watch it and reach into it.
+[docs/howto.md](docs/howto.md#run-a-test-from-an-agent) has the steps.
+
 ## Repository layout
 
 ```
@@ -193,6 +197,8 @@ ci/                  the GitHub Actions workflows, written in Nix
 
 ## Read more
 
+- [docs/howto.md](docs/howto.md): what to type to run a test, wait for
+  it, reach into a paused run, and fix a test against live guests.
 - [docs/reference.md](docs/reference.md): how a run behaves, the
   networking, the backends, memory, and the Kubernetes test, with
   measurements.

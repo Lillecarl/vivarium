@@ -169,7 +169,8 @@ $ nix run --file . mine.driverInteractive               # a REPL, paused before 
 
 A paused run keeps its guests up with the state the failure left, and the
 evidence is written first. `vivarium ctl --out ./out` sends Python in;
-AGENTS.md has the loop.
+[howto.md](howto.md#look-inside-a-paused-run) has the commands, and the
+run prints them with absolute paths.
 
 ## How it fits together
 
