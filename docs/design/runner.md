@@ -230,4 +230,24 @@ a test.
    variables and the `boot.uml.*` options. The umbrella is nixidae, and
    a vivarium is where it keeps its guests. Rewrite the README so the
    repository is easy to approach. Then move nixkube to `mkTest`.
+
+   The names that belong to the project change. The names that belong
+   to User-Mode Linux, the kernel, do not.
+
+   | old | new |
+   | --- | --- |
+   | repository `user-mode-nixos`, source key | `vivarium` |
+   | CLI `uml`, package `pkgs/uml`, module `uml` | `vivarium` |
+   | `pkgs/uml-runner`, `uml_runner` | `pkgs/vivarium-runner`, `vivarium_runner` |
+   | `pkgs/uml-eval`, `uml_eval`, `uml-eval` | `pkgs/vivarium-eval`, `vivarium_eval`, `vivarium-eval` |
+   | MCP command `uml-mcp`, server `uml` | `vivarium-mcp`, `vivarium` |
+   | options `boot.uml.*` | `vivarium.*` |
+   | `UML_*` runner variables | `VIVARIUM_*` |
+   | `uml-agent`, `uml-journal` units | `vivarium-agent`, `vivarium-journal` |
+   | `system.build.umlRootImage`, `umlNixDatabase`, `umlNixRegistration`, `umlRunner`, `umlRunnerPackage` | `vivarium…` |
+   | derivations `uml-session-*`, `uml-driver-*`, `uml-check-*`, `uml-test-*` | `vivarium-…` |
+
+   Unchanged: the backend value `"uml"` and the `.uml` output,
+   `pkgs/uml-kernel` and `umlKernel`, `pkgs/uml-passt-bridge` and
+   `umlPasstBridge`, and the kernel's `CONFIG_UML_*` symbols.
 2. The agent-experience items.
