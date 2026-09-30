@@ -93,7 +93,7 @@ async def main(server: str, spec: str) -> None:
     # The channel's events without channels: the command `start` gave,
     # in a shell, as Claude Code's Monitor runs it.
     watcher = await asyncio.create_subprocess_shell(
-        started["monitor"] + " --json", stdout=asyncio.subprocess.PIPE
+        started["monitor_all"] + " --json", stdout=asyncio.subprocess.PIPE
     )
 
     paused = await asyncio.wait_for(client.until("paused"), 600)
@@ -145,12 +145,21 @@ async def main(server: str, spec: str) -> None:
         fail(f"the monitor exited {watcher.returncode} for a failed run, not 1")
     print(f"ok: the monitor printed the channel's {len(watched)} events and exited 1", flush=True)
 
-    late = await asyncio.create_subprocess_shell(started["monitor"], stdout=asyncio.subprocess.PIPE)
+    late = await asyncio.create_subprocess_shell(started["monitor_all"], stdout=asyncio.subprocess.PIPE)
     output, _ = await asyncio.wait_for(late.communicate(), 60)
     lines = output.decode().splitlines()
     if late.returncode != 1 or len(lines) != len(heard):
         fail(f"a monitor after the verdict exited {late.returncode} with {lines}")
     print(f"ok: a monitor after the verdict replayed it: {lines[-1]}", flush=True)
+
+    # The one an agent runs: no progress, so it wakes only when it must.
+    quiet = await asyncio.create_subprocess_shell(started["monitor"] + " --json", stdout=asyncio.subprocess.PIPE)
+    output, _ = await asyncio.wait_for(quiet.communicate(), 60)
+    kept = [json.loads(line) for line in output.decode().splitlines()]
+    wanted = [event for event in heard if event.get("event") != "progress"]
+    if quiet.returncode != 1 or kept != wanted or len(wanted) == len(heard):
+        fail(f"the quiet monitor exited {quiet.returncode} with {kept}, not {wanted}")
+    print(f"ok: the quiet monitor printed {len(kept)} of {len(heard)} events: no progress", flush=True)
 
     assert process.stdin is not None
     process.stdin.close()

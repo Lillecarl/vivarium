@@ -180,34 +180,35 @@ a test.
 
 ## Agent experience
 
-- `vivarium monitor` gets a quiet mode that prints only `paused`, `failed`,
-  `finished` and `exited`.
+- `vivarium monitor --quiet` prints only `paused`, `failed`, `finished`
+  and `exited`, and exits at the verdict; the Monitor tool delivers each
+  line as it comes, so an agent needs no exit at a pause. MCP `start`
+  returns it as `monitor`, and the whole stream as `monitor_all`
+  (`mcp-check`). Built.
 - An "evaluated" signal tells an agent when it can edit the working copy
   again. The part that runs the evaluation sends it (MCP `start`,
   `vivarium-eval run`), because `events.jsonl` does not exist yet then.
 
 ## Open
 
-1. **When does the quiet monitor exit:** at the first pause, or at the
-   verdict?
-2. **Python inside a guest:** wanted? The agent is a Python process
+1. **Python inside a guest:** wanted? The agent is a Python process
    already; `exec` today runs on the host.
-3. **A size budget for MCP replies.** A failed nixkube case returned
+2. **A size budget for MCP replies.** A failed nixkube case returned
    233k characters. Proposed: 16k a reply, 2k an event, the rest in a
    file the reply names.
-4. **Reusable modules go in `defaults`** (Carl's idea). Every guest
+3. **Reusable modules go in `defaults`** (Carl's idea). Every guest
    imports a reusable module through `defaults`, and the module brings
    its own scripts. An option that must differ per guest has no default,
    so each guest sets it or evaluation fails. Open: how a guest-level
    NixOS module adds a script to the run. The run would collect it from
    each guest's evaluated configuration.
-5. **Is a phase a systemd unit?** (Carl's idea.) Most work runs in the
+4. **Is a phase a systemd unit?** (Carl's idea.) Most work runs in the
    guests under systemd, and the host waits and checks. A unit that
    needs another guest to be ready waits for a file that the runner
    writes, not for a retry to succeed: a worker's `kubeadm join` unit
    starts only when a join token file exists, and the runner writes that
    file through the agent once the control plane is ready.
-6. **Pausing a sandboxed run** (Carl, 2026-09-30: not worth it yet). A
+5. **Pausing a sandboxed run** (Carl, 2026-09-30: not worth it yet). A
    sandboxed run has no way in, so the answer today is to keep a run by
    hand close enough to a sandboxed one that its failures reproduce
    there. Two routes for later: nanopynix's bindings could start a
@@ -264,5 +265,4 @@ Unchanged: the backend value `"uml"` and the `.uml` output,
 
 ## Order of work
 
-1. The quiet monitor mode.
-2. The remaining agent-experience items.
+1. The remaining agent-experience items: the MCP reply budget first.

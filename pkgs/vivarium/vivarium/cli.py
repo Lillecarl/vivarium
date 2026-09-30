@@ -173,6 +173,11 @@ def parse(argv: list[str] | None = None) -> argparse.Namespace:
     )
     watch.add_argument("target", help="the run's --out directory, or its id")
     watch.add_argument("--json", action="store_true", help="each event as a JSON object")
+    watch.add_argument(
+        "--quiet",
+        action="store_true",
+        help="only pauses, failures and the verdict, not each phase that starts or passes",
+    )
     args = parser.parse_args(argv)
     args.pytest_args = extra
     return args
@@ -505,7 +510,7 @@ def main(argv: list[str] | None = None) -> None:
     if args.command == "monitor":
         socket = monitor.locate(args.target)
         try:
-            raise SystemExit(anyio.run(lambda: monitor.follow(socket, as_json=args.json)))
+            raise SystemExit(anyio.run(lambda: monitor.follow(socket, as_json=args.json, quiet=args.quiet)))
         except (FileNotFoundError, ConnectionRefusedError) as error:
             # No socket, or nobody behind it: the server that started the
             # run is gone. What the run wrote is still on the disk.

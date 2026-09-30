@@ -75,6 +75,27 @@ async def test_follow_prints_each_event_and_exits_with_the_verdict(tmp_path: Pat
 
 
 @pytest.mark.anyio
+async def test_quiet_leaves_out_progress(tmp_path: Path, capsys):
+    socket = tmp_path / SOCKET
+    events = [
+        {"run": "r", "event": "progress", "phase": "boot", "text": "phase boot passed"},
+        {"run": "r", "event": "paused", "text": "after boot failed"},
+        {"run": "r", "event": "finished", "passed": "false", "text": "run failed"},
+    ]
+    async with anyio.create_task_group() as group:
+        group.start_soon(_serve, socket, events)
+        while not socket.exists():
+            await anyio.sleep(0.01)
+        with anyio.fail_after(5):
+            code = await follow(socket, quiet=True)
+    assert code == 1
+    assert capsys.readouterr().out.splitlines() == [
+        "r paused: after boot failed",
+        "r finished: run failed",
+    ]
+
+
+@pytest.mark.anyio
 async def test_a_stream_that_ends_before_the_verdict_is_3(tmp_path: Path):
     socket = tmp_path / SOCKET
     async with anyio.create_task_group() as group:

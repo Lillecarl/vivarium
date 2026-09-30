@@ -72,8 +72,9 @@ Events arrive as <channel source="vivarium" run="..." event="progress|paused|fai
 A `progress` event marks a phase starting or passing; say one line about
 it so the person watching sees the run move, and do nothing else.
 Without channels, run the `monitor` command that `start` returns in a
-Monitor: it prints the same events, one line each, and exits with the
-verdict (0 passed, 1 failed, 2 exited without one).
+Monitor: it prints pauses, failures and the verdict, one line each, and
+exits with the verdict (0 passed, 1 failed, 2 exited without one).
+`monitor_all` prints every event, progress included.
 On `paused`, look with `events` and `exec` before you `resume` -- the
 guests go down when the run ends. `stop` ends a run early and still
 tears the guests down.
@@ -402,13 +403,14 @@ def build(runs_holder: list[Runs]) -> FastMCP:
         `attr` is evaluated from `file` (a directory means its default.nix),
         or give `spec`, a spec path. `breaks` pauses before those phases;
         `break_on_failure` pauses on a failed phase. `env` is added to the
-        run's environment, which the evaluation reads: a knob
-        (`UML_<NAME>`), or `UMBRELLA_DEV` to build against a working copy.
+        run's environment, which the evaluation reads: a knob's variable,
+        or `UMBRELLA_DEV` to build against a working copy.
         `kernel` boots a kernel from a working tree instead of Nix's:
         `linux` from a UML build, or a bzImage with virtio built in.
-        Events arrive on the uml channel, and `monitor` in the reply is a
-        command that prints the same events; `state` and `events` answer
-        meanwhile."""
+        Events arrive on the vivarium channel. `monitor` in the reply is a
+        command that prints the pauses, failures and verdict, one line
+        each; `monitor_all` prints every event. `state` and `events`
+        answer meanwhile."""
         written = _spec(Path(str(spec))) if spec is not None else {}
         name = (attr or str(written.get("name", "run"))).replace(".", "-")
         out = Path(tempfile.mkdtemp(prefix=f"vivarium-{name}-"))
@@ -426,8 +428,13 @@ def build(runs_holder: list[Runs]) -> FastMCP:
             kernel=os.path.abspath(kernel) if kernel else None,
         )
         run = await runs().start(argv, out, env or {})
-        monitor = shlex.join([sys.executable, "-m", "vivarium.cli", "monitor", str(out)])
-        return {"run": run.id, "out": str(out), "monitor": monitor}
+        every = [sys.executable, "-m", "vivarium.cli", "monitor", str(out)]
+        return {
+            "run": run.id,
+            "out": str(out),
+            "monitor": shlex.join([*every, "--quiet"]),
+            "monitor_all": shlex.join(every),
+        }
 
     @server.tool()
     async def state(run: str) -> dict[str, Any]:

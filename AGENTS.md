@@ -122,8 +122,10 @@ claude --dangerously-load-development-channels server:vivarium
 ```
 
 Without the flag the tools still work, and `vivarium monitor` carries the
-same events. `start` returns it as `monitor`, a command line: run that
-in Claude Code's Monitor tool. Each run has `<out>/monitor.sock`, served
+same events. `start` returns it as `monitor`, a command line with
+`--quiet`: run that in Claude Code's Monitor tool, and it wakes you for a
+pause, a failure and the verdict, not for each phase that passes.
+`monitor_all` is the same without `--quiet`. Each run has `<out>/monitor.sock`, served
 by the `vivarium-mcp` that started it; `vivarium monitor <out|run id>` replays the
 run's events so far, prints each one as one line (`--json` for JSONL)
 and exits with the verdict: 0 passed, 1 failed, 2 exited without one,

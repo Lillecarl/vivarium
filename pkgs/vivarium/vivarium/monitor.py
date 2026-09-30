@@ -10,6 +10,10 @@ the channel to whoever is watching, flag or not.
 A client connecting late gets the run's earlier events first, then the
 live ones. The server closes the stream after the verdict, and the exit
 status says what the verdict was.
+
+`--quiet` leaves out `progress`, so an agent that runs this in a Monitor
+wakes for a pause, a failure and the verdict, and not for every phase
+that passed.
 """
 
 from __future__ import annotations
@@ -27,6 +31,13 @@ SOCKET: Final = "monitor.sock"
 
 TERMINAL: Final = frozenset({"finished", "exited"})
 """The events after which a run sends nothing more."""
+
+QUIET_SKIPS: Final = frozenset({"progress"})
+"""What `--quiet` leaves out: a phase starting or passing needs no one."""
+
+
+def shown(event: dict[str, Any], *, quiet: bool) -> bool:
+    return not (quiet and event.get("event") in QUIET_SKIPS)
 
 
 def status(event: dict[str, Any]) -> int | None:
@@ -64,7 +75,7 @@ def locate(target: str) -> Path:
     return path / SOCKET
 
 
-async def follow(socket: Path, *, as_json: bool = False) -> int:
+async def follow(socket: Path, *, as_json: bool = False, quiet: bool = False) -> int:
     """Print the run's events until its verdict; answer the exit status."""
     with reachable(socket) as name:
         stream = await anyio.connect_unix(name)
@@ -78,7 +89,8 @@ async def follow(socket: Path, *, as_json: bool = False) -> int:
             *lines, buffer = buffer.split(b"\n")
             for raw in lines:
                 event = json.loads(raw)
-                print(line(event, as_json=as_json), flush=True)
+                if shown(event, quiet=quiet):
+                    print(line(event, as_json=as_json), flush=True)
                 code = status(event)
                 if code is not None:
                     return code
