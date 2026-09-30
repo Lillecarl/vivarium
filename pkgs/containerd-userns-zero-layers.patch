@@ -1,0 +1,90 @@
+From a42457e36825c7ca2c5fa7b70fd8269daf8312f7 Mon Sep 17 00:00:00 2001
+From: lillecarl <carl.andersson@dynamist.se>
+Date: Wed, 30 Sep 2026 22:44:26 +0200
+Subject: [PATCH] overlay: do not idmap a no-parent bind that is already
+ chowned
+
+With user namespaces and remapIDs, createSnapshot chowns a new
+snapshot's fs directory to the remapped root. For a snapshot with no
+parents, the rootfs of a container whose image has zero layers, mounts()
+returned that directory as a bind with uidmap/gidmap options, and
+mount.All then idmapped it. The owner was mapped twice: through the
+idmapped bind, the directory owned by the remapped root is outside the
+mapping, so the container's root could not create /proc and runc and
+crun failed with "mkdirat rootfs/proc: permission denied".
+
+The no-parent bind is the writable layer, as an overlay's upperdir is.
+The upperdir is chowned and not idmapped; only the lowerdirs are. Do the
+same for the bind: keep the chown, drop the idmap. A view of a committed
+parent still gets its uidmap.
+
+Assisted-By: claude-opus-5-5[1m]
+---
+ plugins/snapshots/overlay/overlay.go      |  9 +++++++--
+ plugins/snapshots/overlay/overlay_test.go | 10 ++++++----
+ 2 files changed, 13 insertions(+), 6 deletions(-)
+
+diff --git a/plugins/snapshots/overlay/overlay.go b/plugins/snapshots/overlay/overlay.go
+index 72c174970..c35e86b7a 100644
+--- a/plugins/snapshots/overlay/overlay.go
++++ b/plugins/snapshots/overlay/overlay.go
+@@ -572,14 +572,19 @@ func (o *snapshotter) mounts(s storage.Snapshot, info snapshots.Info) []mount.Mo
+ 		if s.Kind == snapshots.KindView {
+ 			roFlag = "ro"
+ 		}
++		// No uidmap/gidmap options: createSnapshot has already chowned this
++		// directory to the remapped root, as it does an overlay's upperdir.
++		// Idmapping the bind as well maps that owner a second time, out of
++		// the range, and the container's root cannot create anything in its
++		// rootfs, not even the /proc mount point.
+ 		return []mount.Mount{
+ 			{
+ 				Source: o.upperPath(s.ID),
+ 				Type:   "bind",
+-				Options: append(options,
++				Options: []string{
+ 					roFlag,
+ 					"rbind",
+-				),
++				},
+ 			},
+ 		}
+ 	}
+diff --git a/plugins/snapshots/overlay/overlay_test.go b/plugins/snapshots/overlay/overlay_test.go
+index 440dff90e..307d09ef3 100644
+--- a/plugins/snapshots/overlay/overlay_test.go
++++ b/plugins/snapshots/overlay/overlay_test.go
+@@ -379,7 +379,8 @@ func testOverlayRemappedBind(t *testing.T, newSnapshotter testsuite.SnapshotterF
+ 		}
+ 
+ 		bp := getBasePath(ctx, o, root, key)
+-		expected := []string{test.expUIDMntOpt, test.expGIDMntOpt, "rw", "rbind"}
++		// Chowned to the remapped root and not idmapped as well: see mounts.
++		expected := []string{"rw", "rbind"}
+ 
+ 		checkMountOpts := func() {
+ 			if len(mounts) != 1 {
+@@ -410,7 +411,9 @@ func testOverlayRemappedBind(t *testing.T, newSnapshotter testsuite.SnapshotterF
+ 		}
+ 		checkMountOpts()
+ 
+-		expected[2] = "ro"
++		// A view of a committed parent is a bind of the parent, and that one
++		// is idmapped.
++		expected = []string{test.expUIDMntOpt, test.expGIDMntOpt, "ro", "rbind"}
+ 		if err = o.Commit(ctx, "base", key, opts...); err != nil {
+ 			t.Fatal(err)
+ 		}
+@@ -427,8 +430,7 @@ func testOverlayRemappedBind(t *testing.T, newSnapshotter testsuite.SnapshotterF
+ 
+ 		bp = getBasePath(ctx, o, root, key)
+ 
+-		expected = expected[2:]
+-		expected[0] = "rw"
++		expected = []string{"rw", "rbind"}
+ 
+ 		test.expUID = 0
+ 		test.expGID = 0
+-- 
+2.55.0
+
