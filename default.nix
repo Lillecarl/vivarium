@@ -946,6 +946,38 @@ let
     };
 
     /*
+      One guest of each backend on one segment, reaching each other over
+      IP by name. `mixed` and `container-lan` each prove one pair; this
+      holds all three at once.
+    */
+    backends = mkSession {
+      name = "backends";
+      nodes = lib.mapAttrs (name: backend: {
+        boot.uml = {
+          inherit backend;
+          lan = {
+            network = "backends";
+            address =
+              {
+                u = "10.57.0.1/24";
+                q = "10.57.0.2/24";
+                c = "10.57.0.3/24";
+              }
+              .${name};
+          };
+        };
+      }) {
+        u = "uml";
+        q = "qemu";
+        c = "container";
+      };
+      phases.reach = {
+        script = ./tests/phases/backends.py;
+        after = [ "boot" ];
+      };
+    };
+
+    /*
       Can a suite that has to run inside a guest report like one that
       runs on the host?
 
