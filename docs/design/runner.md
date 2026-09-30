@@ -75,6 +75,11 @@ The long record up to 2026-09-30 is `history/running-anywhere.md`.
 - **Guests talk to each other on `vec1`**: socketpairs, and a hub in the
   runner for three or more. It needs no namespace and no passt
   (`lan.stubBlocked`).
+- **The run's own user namespace maps root and, when the host has
+  them, the caller's subordinate ids.** Container guests need those ids
+  (`newuidmap`), and nothing else does. A run with a container guest on
+  a host without subordinate ids, a delegated cgroup or a writable
+  `/dev/net/tun` fails at start and names what is missing.
 - **The runner raises its open-file soft limit** to the hard limit at
   start. UML fails at 1024 (EMFILE), which many shells and every
   `systemd-run --user` unit have.
@@ -89,11 +94,12 @@ The long record up to 2026-09-30 is `history/running-anywhere.md`.
 
 ## Open
 
-1. **One store view per guest under UML.** QEMU already takes a store
-   directory per guest (virtiofsd's `--shared-dir`). A UML guest's init
-   mounts the host's `/nix` by that name (`modules/image.nix`), so each
-   UML process needs its own mount namespace, or the image learns another
-   path. Next spike.
+1. **One store view per guest.** Decided: the runner builds each guest's
+   view as a directory in the run's one namespace. QEMU hands it to
+   virtiofsd's `--shared-dir`; a UML guest gets its path on the kernel
+   command line, and `/init` mounts hostfs from there, as it does for
+   `/artifacts`. Open: whether passt starts as root in a namespace that
+   maps subordinate ids, and in one that maps only the caller.
 2. **The output schema:** the names of the outputs above, after
    nixos-test's.
 3. **When does the quiet monitor exit:** at the first pause, or at the
@@ -123,6 +129,14 @@ The long record up to 2026-09-30 is `history/running-anywhere.md`.
   them over the agent channel it already has, so every event is in
   `events.jsonl` and no guest needs a network or a new library. Built
   when the first test needs it.
+
+- **Several isolated segments per guest**, for network topology tests:
+  a list of networks, one interface each, as nixos-test's
+  `virtualisation.vlans`. Plus one special segment where passt has an
+  address and routes to the internet. Open: passt serves one guest per
+  instance (from memory, not checked), so a segment that many guests
+  share reaches the internet through a router guest, or each guest keeps
+  a private `vec0` of its own, as now.
 
 ## Not measured
 
