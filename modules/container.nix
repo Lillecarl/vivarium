@@ -32,6 +32,14 @@ lib.mkIf (cfg.backend == "container") {
   # isContainer's login prompt, on the console the runner reads.
   systemd.services.console-getty.enable = false;
 
+  # isContainer sets `daemon`, for a nixos-container that uses its host's
+  # daemon. This guest runs its own, as the other backends do, and there
+  # a user's `nix daemon` inherited `daemon` and served itself through its
+  # own socket, one worker per connection until the test timed out.
+  # `auto` is what Nix reads when the variable is absent; NixOS cannot
+  # remove a variable, only replace it.
+  environment.variables.NIX_REMOTE = lib.mkForce "auto";
+
   # A container cannot mount these, and systemd reports the failure as a
   # degraded system (measured).
   systemd.suppressedSystemUnits = [

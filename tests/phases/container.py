@@ -36,6 +36,13 @@ async def test(vms: Machines) -> None:
         raise AssertionError(f"nobody runs as {who.strip()}")
     print("[test] systemd is up, nothing failed, and nobody is 65534")
 
+    # What a login shell gets, as on the other backends. `daemon` here made
+    # a user's own `nix daemon` connect to itself.
+    remote = (await one.succeed("bash -lc 'echo $NIX_REMOTE'")).strip()
+    if remote != "auto":
+        raise AssertionError(f"a login shell has NIX_REMOTE={remote!r}, expected 'auto'")
+    print("[test] NIX_REMOTE is auto, as on the other backends")
+
     if store_is_one_mount("/nix"):
         await _writable_store(one)
     else:
