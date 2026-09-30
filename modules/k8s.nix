@@ -538,7 +538,10 @@ let
     };
   };
 
-  kataConfig = "${pkgs.kata-runtime}/share/defaults/kata-containers/configuration-qemu.toml";
+  # Not nixpkgs' 3.32.0, whose guest kernel oopses in virtio-fs; see the
+  # package. A kata-runtime >= 4.0.0 in nixpkgs replaces it.
+  kata = pkgs.callPackage ../pkgs/kata-runtime/package.nix { };
+  kataConfig = "${kata}/share/defaults/kata-containers/configuration-qemu.toml";
 
   # What `bring_up` applies, like `storageManifest`: a RuntimeClass per
   # handler, named after it.
@@ -821,7 +824,7 @@ in
     # containerd finds a shim, and the shim its runtime, on PATH.
     systemd.services.containerd.path = lib.mkIf (cfg.cri == "containerd") (
       lib.optional (lib.elem "runsc" cfg.runtimes) pkgs.gvisor
-      ++ lib.optional (lib.elem "kata" cfg.runtimes) pkgs.kata-runtime
+      ++ lib.optional (lib.elem "kata" cfg.runtimes) kata
     );
 
     /*
@@ -859,7 +862,7 @@ in
         }
         // lib.optionalAttrs (lib.elem "kata" cfg.runtimes) {
           kata = {
-            runtime_path = "${pkgs.kata-runtime}/bin/containerd-shim-kata-v2";
+            runtime_path = "${kata}/bin/containerd-shim-kata-v2";
             runtime_type = "vm";
             runtime_root = "/run/vc";
             runtime_config_path = kataConfig;
