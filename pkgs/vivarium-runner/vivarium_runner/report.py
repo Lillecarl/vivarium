@@ -20,7 +20,6 @@ timings for is the one that timed out.
 from __future__ import annotations
 
 import json
-import os
 import time
 from contextlib import contextmanager
 from dataclasses import dataclass, field
@@ -29,11 +28,6 @@ from pathlib import Path
 # Enough to recognise a command, short enough that a few thousand of them
 # stay a file somebody will open.
 _WIDTH = 200
-
-# The environment variable that names where to write. `mkTest` sets it to
-# a file in `$out`, so a sandboxed build always records; a run by hand
-# records when it is asked to.
-ENV = "VIVARIUM_TEST_REPORT"
 
 
 @dataclass
@@ -155,14 +149,6 @@ class Report:
             lines.append(f"[time]   {s.seconds:7.1f}s {s.kind:5} {s.what} ({s.machine})")
         return "\n".join(lines)
 
-    def write_if_asked(self, passed: bool, error: str | None = None) -> Path | None:
-        where = os.environ.get(ENV)
-        if not where:
-            return None
-        path = Path(where)
-        self.write(path, passed, error)
-        return path
-
 
 def _toplevel(steps: list) -> float:
     """Seconds covered by the steps, counting nesting once.
@@ -186,10 +172,5 @@ def _toplevel(steps: list) -> float:
 
 
 RUN = Report()
-"""The run in progress.
-
-A module-level value because `run_test` is the only entry point and a
-test never makes a second run in one process -- passing a recorder
-through `machines()` into every `Machine` would be four signatures
-changed to say the same thing.
-"""
+"""What a `Machine` made without a recorder records into, as
+`vivarium-run`'s single guest is. A session passes its own."""

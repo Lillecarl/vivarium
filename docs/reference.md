@@ -179,7 +179,7 @@ AGENTS.md has the loop.
   │    passt     ├─────────┤       │   NAT out, forwards in
   └──────────────┘         │       │
   ┌──────────────┐   ssl0  │  UML  │
-  │  run/harness ├─────────┤kernel │   arpyc on /dev/ttyS0: the agent
+  │    runner    ├─────────┤kernel │   arpyc on /dev/ttyS0: the agent
   └──────────────┘         │       │
   ┌──────────────┐   vec1  │       │
   │ socketpair / ├─────────┤       │   L2 to the other guests

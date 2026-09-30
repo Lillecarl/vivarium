@@ -88,9 +88,8 @@ def _tail(path: Path, lines: int = 20) -> str:
 
 
 ARTIFACTS_ENV = "VIVARIUM_ARTIFACTS"
-"""What the UML guest's /init reads the host directory from.  Not the
-host-side ``VIVARIUM_TEST_ARTIFACTS``: that one names the root of a run, this
-one names one guest's subdirectory of it."""
+"""What the UML guest's /init reads its host directory from: one
+guest's subdirectory of the run's artifacts."""
 
 RUN_ROOT_ENV = "VIVARIUM_RUN_ROOT"
 """A short directory `vivarium run` removes however it ends; see

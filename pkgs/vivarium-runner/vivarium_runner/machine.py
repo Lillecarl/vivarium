@@ -28,7 +28,7 @@ import time
 from asyncio import subprocess
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Callable
+from typing import Any, Callable
 
 from .agent import AGENT_READY
 from .arpyc import AsyncConnection, connect
@@ -119,7 +119,7 @@ class MachineSpec:
     forward: tuple[forward.Rule, ...] = ()
     """Host-side port forwards.  Addresses in these are still None until
     :func:`vivarium_runner.forward.resolve` has run over every machine in the
-    run at once -- see :func:`vivarium_runner.harness.machines`."""
+    run at once, which `vivarium run` does before it boots any."""
 
     @classmethod
     def from_json(cls, data: dict) -> MachineSpec:
@@ -902,3 +902,49 @@ class Machine:
                     f"(state: {state})\n{await self.journal(unit)}"
                 )
             await asyncio.sleep(0.5)
+
+
+class Machines(dict[str, Machine]):
+    """The run's machines by name, also reachable as attributes.
+
+    Parameterised because a bare ``dict`` makes ``values()`` and
+    ``items()`` Unknown, and a caller's pyright then checks nothing.
+    """
+
+    settings: dict
+    """Whatever the spec's ``settings`` held -- values a test needs that
+    only Nix knows, such as a package version or an image tag.  Empty
+    unless ``mkTest`` was given some."""
+
+    artifacts: Path
+    """Where this run's evidence goes.  Each guest sees its own
+    subdirectory as ``/artifacts``, so a test collects a file by writing
+    it in the guest and nothing is copied afterwards."""
+
+    knobs: dict[str, str]
+    """What this run was told from outside, by name.
+
+    Declared in Nix and resolved there, so a knob can change what is
+    *built* as well as what a phase does. Every declared name is present;
+    one whose variable is unset carries its declared default, which is
+    what a sandboxed check always gets."""
+
+    shared: dict[str, Any]
+    """One phase's findings for a later phase of the same run.
+
+    The phases are separate modules, so a value one computes -- a
+    process census taken before the suites -- reaches the phase that
+    compares against it only through here."""
+
+    phase: str | None
+    """The phase running now. One script can serve several phases, told
+    apart by name: ``mkTest`` phases generated from one list in Nix.
+    ``None`` between phases."""
+
+    def __getattr__(self, name: str) -> Machine:
+        try:
+            return self[name]
+        except KeyError:
+            raise AttributeError(
+                f"no machine {name!r} in this test; have {', '.join(self)}"
+            ) from None

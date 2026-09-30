@@ -1,4 +1,4 @@
-"""Bring a kubeadm cluster up on UML guests, and ask it questions.
+"""Bring a kubeadm cluster up on guests, and ask it questions.
 
 A node knows nothing about the others -- see ``modules/k8s.nix`` -- so
 everything needing the whole cluster in view lives here rather than in a
@@ -6,16 +6,14 @@ module: who joins whom, which /24 each node was given, the routes between
 them, and whether anything is Ready.
 
 This is a library and not a test.  ``tests/k8s.py`` is the three-node case,
-and a caller outside this repository can build its own:
+and a phase outside this repository can build its own:
 
-    from vivarium_runner import run_test
+    from vivarium_runner import Machines
     from vivarium_runner.cluster import bring_up, kubectl
 
-    async def test(vms):
+    async def test(vms: Machines) -> None:
         cp = await bring_up(vms)
         await kubectl(cp, "apply --filename /nix/store/...")
-
-    run_test(test)
 
 Everything a caller is likely to need is a coroutine over ``Machine``
 objects, so nothing here assumes the guests came from this repository's

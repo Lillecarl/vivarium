@@ -10,8 +10,7 @@ hand. Every test here is one. `docs/design/runner.md` is the design and
 records what is decided and what is not.
 
 `fromNixosTest` (`nixos-test.nix`) maps a nixos-test spec onto it and is
-kept apart from it. The Python harness `vivarium_runner.run_test` served the
-old `mkTest`, and stays only until nixkube moves.
+kept apart from it.
 
 The split underneath is the point. `pkgs/vivarium-runner` is the **mechanism**
 — guests, backends, the agent channel — and it has no opinion about
@@ -401,9 +400,9 @@ how a test proves the thing under test left nothing running.
 Do not guess at what makes a test slow, and do not add timing prints.
 Every run records itself.
 
-A check writes `report.json` into its own output; that is why a test's
-output is a directory. A run outside the sandbox writes one when
-`VIVARIUM_TEST_REPORT` names a file. Both write on failure too.
+A run writes `report.json` into its `--out`, which for a check is its
+own output; that is why a test's output is a directory. It writes on
+failure too.
 
 ```sh
 jq '{total_seconds, boot_seconds, waiting_seconds}' result/report.json
