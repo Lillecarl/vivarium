@@ -51,6 +51,48 @@ The long record up to 2026-09-30 is `history/running-anywhere.md`.
   namespace), `inject` (a file's `test(vms)`), `pytest` and a declared
   phase, all from the working tree.
 
+## The function: a draft for review
+
+Names are nixos-test's, from `nixos/lib/testing` in the pinned
+nixpkgs. Where this differs, the reason is on the line.
+
+Inputs, as module options:
+
+| option | nixos-test | here |
+| --- | --- | --- |
+| `name` | same | same |
+| `nodes.<name>` | a NixOS module | same; the guest's backend is an option in it, `boot.uml.backend` |
+| `containers.<name>`, `nodeDefaults`, `containerDefaults` | nspawn containers apart from VMs | none: a container is a node with `backend = "container"`, so one set holds every guest and backends mix freely |
+| `defaults` | a module every node imports | same (built) |
+| `testScript` | one Python script | kept, as a phase named `test` after `boot`; it is what a `mkTest` caller moves to |
+| `phases.<name>` | none | the ordered steps; `testScript` is one of them |
+| `extraPythonPackages` | Python the script imports | same, beside `pythonPath` for local modules |
+| `interactive` | a module merged in `driverInteractive` | same |
+| `globalTimeout`, `meta` | same | same |
+| `backend` | none | the default for every node |
+| `knobs`, `settings` | none | kept |
+
+Outputs:
+
+| output | nixos-test | here |
+| --- | --- | --- |
+| the derivation | the sandboxed run | same; exits on the first failure |
+| `.driver` | the run by hand | same; exits on the first failure. Replaces `.run` |
+| `.driverInteractive` | by hand, into a Python REPL | by hand, paused on failure with the guests up; `exec`, `inject` and the MCP server reach in. Replaces `--break-on-failure` as the way to ask |
+| `.nodes`, `.config` | the evaluated guests and test | same (`.nodes` built) |
+| `.extend { modules; }` | the test with more modules | same; it replaces the `.uml` and `.qemu` variants, since the backend is an option |
+| `.phases` | none | kept: the phases in order, without booting |
+
+Both drivers take the same flags at run time: `--break PHASE`,
+`--break-on-start`, `--only`, `--offline`. Nothing about a run's mode is
+set in Nix.
+
+Open in this draft:
+
+- `.driver` or `.run`? nixos-test users know `.driver`; this
+  repository's users know `.run`.
+- `interactive`: worth building now, or when a test needs it?
+
 ## Isolation
 
 - **User namespaces are required**, in every run, sandboxed or not.
