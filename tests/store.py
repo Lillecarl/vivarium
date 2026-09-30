@@ -19,7 +19,7 @@ import json
 import os
 import subprocess
 
-from uml_runner import Machines, run_test
+from uml_runner import Machines
 
 # The same view of the host's store that the guest gets, used here to pick
 # a path that view actually has.
@@ -93,7 +93,7 @@ async def test(vms: Machines) -> None:
     node = vms.node
     await node.wait_for_unit("uml-host-store.service")
 
-    # What `settings` handed over, registered by mkTest because it is in
+    # What `settings` handed over, registered by the session because it is in
     # `settings` and for no other reason.
     probe = vms.settings["probe"]
     await node.succeed(f"nix path-info {probe}")
@@ -126,5 +126,3 @@ async def test(vms: Machines) -> None:
     total = (await node.succeed("nix path-info --all | wc -l")).strip()
     print(f"[test] the guest's upper database holds {total} paths")
 
-
-run_test(test)

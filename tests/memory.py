@@ -18,7 +18,7 @@ and `host_memory_kib()` is one number either way.
 
 import asyncio
 
-from uml_runner import Machine, Machines, run_test
+from uml_runner import Machine, Machines
 
 #: What the guest reads: every distinct file of its own system closure.
 #: Measured at 362 MiB over 16002 files, and 17 seconds for the run.
@@ -140,5 +140,3 @@ async def test(vms: Machines) -> None:
         f"{(free_before - ballooned) // 1024}M shrink took"
     )
 
-
-run_test(test)

@@ -14,7 +14,7 @@ smallest real one to hand.  What is being asked is whether the kernel
 answers at all.
 """
 
-from uml_runner import Machines, run_test
+from uml_runner import Machines
 
 
 async def test(vms: Machines) -> None:
@@ -72,5 +72,3 @@ async def test(vms: Machines) -> None:
     print("[test] with allow_other, root reads alice's mount")
     await vm.succeed("su alice -c 'fusermount3 -u /home/alice/mnt'")
 
-
-run_test(test)

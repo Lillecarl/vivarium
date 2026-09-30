@@ -6,7 +6,7 @@ host can talk to each of them over the serial line, and that frames get
 between them on vec1.
 """
 
-from uml_runner import Machines, run_test
+from uml_runner import Machines
 
 
 async def test(vms: Machines) -> None:
@@ -24,5 +24,3 @@ async def test(vms: Machines) -> None:
     failed = await server.execute("systemctl --failed --no-legend")
     print(f"[test] failed units on {server.name}: {failed[1] or 'none'}")
 
-
-run_test(test)

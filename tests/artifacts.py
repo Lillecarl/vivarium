@@ -9,7 +9,7 @@ reads on the host, with nothing in between.
 Two guests, because each one must get its own directory.
 """
 
-from uml_runner import Machines, run_test
+from uml_runner import Machines
 
 BLOB = 1 << 20
 """A megabyte: hostfs and virtiofs are different code paths for a write
@@ -54,5 +54,3 @@ async def test(vms: Machines) -> None:
     assert await vms.one.count_processes("no-such-program") == 0
     print("[test] and counts none of a program that is not there")
 
-
-run_test(test)

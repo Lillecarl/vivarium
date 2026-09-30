@@ -15,10 +15,10 @@ nothing is imported. What comes up is an ordinary kubeadm node.
 **Outside the build sandbox only, and it cannot be otherwise** -- a sandbox
 has no network, so there is nothing to pull from:
 
-    nix run --file . k8s-pull.run        # and k8s-pull.uml.run
+    nix run --file . k8s-pull.driver     # and k8s-pull.uml.driver
 """
 
-from uml_runner import Machines, run_test
+from uml_runner import Machines
 from uml_runner.cluster import KUBE_DNS, KUBE_PROXY, bring_up, kubectl, until
 
 # Nothing built it, nothing imported it, and it is not in the guest's Nix
@@ -77,5 +77,3 @@ async def test(vms: Machines) -> None:
     assert "pulled-ok" in logs, f"the pod ran but said {logs!r}"
     print(f"[test] a pod pulled {WORKLOAD} and ran it")
 
-
-run_test(test)

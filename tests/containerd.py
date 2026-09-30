@@ -24,7 +24,7 @@ import asyncio
 import json
 import re
 
-from uml_runner import Machine, MachineError, Machines, run_test
+from uml_runner import Machine, MachineError, Machines
 
 # Host network, so a sandbox needs no CNI: NamespaceMode.NODE is 2 in the
 # CRI API.  This test is not about networking.
@@ -211,5 +211,3 @@ async def probe(node: Machine, handler: str, version: str) -> None:
         )
     print(f"[test] {handler}: a container of symlinks exec'd out of /nix/store: {logs.strip()}")
 
-
-run_test(test)

@@ -19,7 +19,7 @@ Then storage, which is the other thing a chart assumes a cluster has: a
 claim with no class named, bound to a node's own directory.
 """
 
-from uml_runner import Machine, Machines, run_test
+from uml_runner import Machine, Machines
 from uml_runner.cluster import (
     READY_TIMEOUT,
     bring_up,
@@ -232,5 +232,3 @@ async def test(vms: Machines) -> None:
 
     print("[k8s] " + await kubectl(cp, "get nodes --output wide"), flush=True)
 
-
-run_test(test)

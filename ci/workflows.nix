@@ -208,7 +208,7 @@ let
       {
         name = "Run k8s-pull: a node that pulls its images, on a virtual machine";
         timeout-minutes = 20;
-        run = "nix run --print-build-logs --file . k8s-pull.run";
+        run = "nix run --print-build-logs --file . k8s-pull.driver";
       }
     ];
   };
@@ -258,19 +258,21 @@ let
     ghanix = sandboxBootstrap;
     steps = [
       (steps.build {
-        name = "The session: phase rules, knobs, --only, recipes, stream, pytest, breakpoints, parallel";
+        name = "The session: phase rules, knobs, --only, recipes, stream, pytest, breakpoints, parallel, peers, cleanup, interactive";
         attrs = [
           "phase-rules"
           "knobs"
           "only-rules"
           "recipes"
-          "impure"
           "stream"
           "pytest-phase"
           "breakpoint"
           "guest-suites"
           "kernel-override"
           "parallel"
+          "peers"
+          "cleanup"
+          "interactive"
         ];
         timeoutMinutes = 20;
       })

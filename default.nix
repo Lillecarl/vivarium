@@ -63,10 +63,13 @@ let
   # the ceiling costs nothing until touched.
   kataTest =
     cri:
-    mkTest {
+    mkSession {
       name = "kata-${cri}";
       backend = "qemu";
-      script = ./tests/containerd.py;
+      phases.test = {
+        script = ./tests/containerd.py;
+        after = [ "boot" ];
+      };
       nodes.node = {
         imports = [ ./modules/k8s.nix ];
         services.uml-k8s = {
@@ -160,11 +163,14 @@ let
     and a build sandbox has no `/nix/var` in it at all.  Run it by hand
     -- tests/store.py says how at its head.
   */
-  store = mkTest {
+  store = mkSession {
     name = "store";
-    script = ./tests/store.py;
+    phases.test = {
+      script = ./tests/store.py;
+      after = [ "boot" ];
+    };
     # A path handed to the test the way a caller hands one over, and
-    # nothing else names it. `mkTest` registers it with the guest, which
+    # nothing else names it. The session registers it with the guest, which
     # is the half of the guest's store that does not come from the host's
     # database -- and cannot, because a path this fresh is still in the
     # host's write-ahead log.
@@ -196,10 +202,13 @@ let
     10.104, and not the 10.100 `k8s` uses: unsandboxed, a guest routes for
     real, and this host has a WireGuard interface on 10.100.0.1/24.
   */
-  k8s-pull = mkTest {
+  k8s-pull = mkSession {
     name = "k8s-pull";
     backend = "qemu";
-    script = ./tests/pull.py;
+    phases.test = {
+      script = ./tests/pull.py;
+      after = [ "boot" ];
+    };
     nodes.cp = {
       imports = [ ./modules/k8s.nix ];
       services.uml-k8s = {
@@ -276,9 +285,12 @@ let
 
   tests = {
     # Do the guests boot, see each other on vec1, and answer the host?
-    lan = mkTest {
+    lan = mkSession {
       name = "lan";
-      script = ./tests/lan.py;
+      phases.test = {
+        script = ./tests/lan.py;
+        after = [ "boot" ];
+      };
       nodes = pair "lan";
     };
 
@@ -291,9 +303,12 @@ let
       be checked any other way, since passt's forwards are fixed for
       its lifetime.
     */
-    forward = mkTest {
+    forward = mkSession {
       name = "forward";
-      script = ./tests/forward.py;
+      phases.test = {
+        script = ./tests/forward.py;
+        after = [ "boot" ];
+      };
       nodes.node = {
         boot.uml.forward = [ { ports = "all"; } ];
         environment.systemPackages = [ pkgs.python3 ];
@@ -306,28 +321,15 @@ let
       Two guests, because each one must get its own directory.
       `pkgs.util-linux` for `mountpoint`.
     */
-    artifacts = mkTest {
+    artifacts = mkSession {
       name = "artifacts";
-      script = ./tests/artifacts.py;
+      phases.test = {
+        script = ./tests/artifacts.py;
+        after = [ "boot" ];
+      };
       nodes = lib.genAttrs [ "one" "two" ] (_: {
         environment.systemPackages = [ pkgs.util-linux ];
       });
-    };
-
-    /*
-      What may a run take from the host environment?
-
-      Declared as a name here and never as a value, so this test's store
-      path is the same whatever `UML_TEST_IMPURITY` is set to -- which is
-      the property the whole mechanism exists for.  Try it:
-
-          UML_TEST_IMPURITY=anything nix run --file . impure.run
-    */
-    impure = mkTest {
-      name = "impure";
-      script = ./tests/impure.py;
-      impurities = [ "UML_TEST_IMPURITY" ];
-      nodes.one = { };
     };
 
     /*
@@ -1248,9 +1250,12 @@ let
       and is what puts a setuid fusermount3 under /run/wrappers.  The
       wrappers themselves a guest already has.
     */
-    fuse = mkTest {
+    fuse = mkSession {
       name = "fuse";
-      script = ./tests/fuse.py;
+      phases.test = {
+        script = ./tests/fuse.py;
+        after = [ "boot" ];
+      };
       nodes.node = {
         programs.fuse.enable = true;
         programs.fuse.userAllowOther = true;
@@ -1272,9 +1277,12 @@ let
       `madvise(MADV_REMOVE)` and QEMU through virtio-balloon, and a test
       sees one number either way. Issues #12 and #4.
     */
-    memory = mkTest {
+    memory = mkSession {
       name = "memory";
-      script = ./tests/memory.py;
+      phases.test = {
+        script = ./tests/memory.py;
+        after = [ "boot" ];
+      };
       nodes.node = {
         # Large enough that reading the guest's own closure is page cache
         # and not pressure, which is what lets the test attribute what it
@@ -1284,9 +1292,12 @@ let
     };
 
     # How much does a segment between two guests actually carry?
-    iperf = mkTest {
+    iperf = mkSession {
       name = "iperf";
-      script = ./tests/iperf.py;
+      phases.test = {
+        script = ./tests/iperf.py;
+        after = [ "boot" ];
+      };
       nodes = iperfNodes;
     };
 
@@ -1298,9 +1309,12 @@ let
       whether the images imported, and whether a container of
       symlinks can reach the store they point into.
     */
-    containerd = mkTest {
+    containerd = mkSession {
       name = "containerd";
-      script = ./tests/containerd.py;
+      phases.test = {
+        script = ./tests/containerd.py;
+        after = [ "boot" ];
+      };
       nodes.node =
         { config, ... }:
         {
@@ -1336,9 +1350,12 @@ let
     kata-containerd = kataTest "containerd";
 
     # The same questions under CRI-O. nixkube#74.
-    crio = mkTest {
+    crio = mkSession {
       name = "crio";
-      script = ./tests/containerd.py;
+      phases.test = {
+        script = ./tests/containerd.py;
+        after = [ "boot" ];
+      };
       nodes.node =
         { config, ... }:
         {
@@ -1369,9 +1386,12 @@ let
     # Does a real workload come up across three nodes?  Far heavier
     # than the others: three guests, a control plane and a container
     # runtime, so this one wants a builder rather than a laptop.
-    k8s = mkTest {
+    k8s = mkSession {
       name = "k8s";
-      script = ./tests/k8s.py;
+      phases.test = {
+        script = ./tests/k8s.py;
+        after = [ "boot" ];
+      };
       nodes = k8sNodes;
       settings = {
         inherit (k8sConfig.services.uml-k8s) podSubnet workloadImage;

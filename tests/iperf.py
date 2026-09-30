@@ -7,7 +7,7 @@ already running, and prints the summary lines.
 
 import json
 
-from uml_runner import Machine, Machines, run_test
+from uml_runner import Machine, Machines
 
 DURATION = 5
 
@@ -37,5 +37,3 @@ async def test(vms: Machines) -> None:
             f"at mtu {source.spec.mtu}"
         )
 
-
-run_test(test)

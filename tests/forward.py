@@ -22,7 +22,7 @@ import asyncio
 import urllib.error
 import urllib.request
 
-from uml_runner import Machine, Machines, run_test
+from uml_runner import Machine, Machines
 from uml_runner.forward import ephemeral_range
 
 PAGE = "hello-from-inside-the-guest"
@@ -105,5 +105,3 @@ async def test(vms: Machines) -> None:
     assert vm.reachable(low) == [], f"{low} should not be forwarded"
     print(f"[test] ephemeral {low} correctly reports as not forwarded")
 
-
-run_test(test)
