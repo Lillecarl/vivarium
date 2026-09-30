@@ -167,6 +167,7 @@
 14    suite where "which test logged this" is the question.
 14 8. **Retire `mkTest`.** This repository's own tests and nixkube's
 14    `ciTest` still use it. Every feature above is session-only.
+18    Decided in round 18, as "one door". See area 9.
 14
 14 Still open from before: pytest as the entrypoint, and why pynixd's
 14 suites panic a UML guest in `munmap` (issue #8).
@@ -293,6 +294,10 @@
 6 - **The MCP server is a stateful version of this CLI.** That is why the
 6   CLI is a separate thing rather than something Nix generates. It is not
 6   a later feature; it is the reason for the shape.
+18
+18 From the eighteenth round: one door, `defaults`, helpers that a
+18 test brings, an evaluated signal and a quiet monitor. Area 9 has
+18 each of them.
 7
 7 ## How to build it
 7
@@ -1090,6 +1095,126 @@
 17 every link "pending" for ever. `/sys` is now read-only, as nspawn and
 17 podman have it, which is udevd's own condition for not starting.
 1
+18 ## Area 9 — agent and developer experience
+18
+18 **AX** is how an agent drives a run: the MCP tools, the monitor, and
+18 what each reply costs in context. **DX** is the same for a person at a
+18 shell. Seven findings started this area. An agent measured them on
+18 2026-09-30, while it debugged Kata under nixkube. Carl's answers to
+18 them are round 18.
+18
+18 The seven findings, ranked by the time they cost:
+18
+18 1. A consumer's session cannot take one more module from outside.
+18 2. A `mkTest` test cannot pause.
+18 3. `uml monitor` wakes an agent at each phase, and exits only at the
+18    verdict.
+18 4. Output from a VM inside a guest is not visible.
+18 5. A reply can be very large.
+18 6. No signal says that evaluation is done.
+18 7. When `exec` fails, a command's output is only in the traceback.
+18
+18 ### Decided
+18
+18 - **One door.** `mkTest` and `mkSession` merge. A test has one
+18   configuration. The output attribute that a caller picks sets how it
+18   runs: `.check`, `.run` or `.phases`. An argument never sets it. This
+18   is suggestion 8. It also closes finding 2, because every session can
+18   pause already (`--break-on-failure`).
+18 - **`defaults`, as nixos-tests has it.** It is a module that every node
+18   imports, beside `nodes.<name>`. `run.nix` has no such option today:
+18   `nodes` is `attrsOf deferredModule`, so a module common to all nodes
+18   is written once for each node.
+18 - **A test brings its own helpers.** A need that only one test has
+18   becomes a Python module on that test's `pythonPath`. An agent calls it
+18   from a paused run. The runner gets no feature for it. So finding 4
+18   becomes a helper in the Kata test that reads the Kata guest console.
+18   It is not a `vm.capture` in the runner.
+18 - **An "evaluated" signal (finding 6).** An agent must know when it can
+18   edit the working copy again. Trap: `events.jsonl` exists only when
+18   `uml run` starts, and `uml-eval` evaluates before that. So the part
+18   that wraps the evaluation sends the signal: MCP `start`, and a line
+18   from `uml-eval run`. The session's event stream cannot send it.
+18 - **A quiet monitor (finding 3).** `uml monitor` gets a mode that
+18   prints only `paused`, `failed`, `finished` and `exited`. A `progress`
+18   line wakes an agent and tells it nothing it must act on.
+18   `channel_event` already sorts events into these kinds, so the mode is
+18   a filter. When the monitor exits is open question 14.
+18
+18 ### Proposed, not decided
+18
+18 **An override from outside (finding 1).** `defaults` does not close
+18 this finding. The time went into a scratch `default.nix` that
+18 evaluated `<nixpkgs>` and not nixkube's pin, so each comparison was
+18 against a different system. An override must run inside the
+18 consumer's own evaluation. Two shapes:
+18
+18 1. **`.extend { modules = [ ... ]; }` on a session's output**, as
+18    nixos-tests has `extend`. `lib.evalModules` gives it through
+18    `extendModules`. A scratch file imports nixkube's session and adds
+18    a module to one node. The pin stays, because the evaluation is
+18    nixkube's. It needs a file, but no edit to the consumer.
+18    Recommended.
+18 2. **A knob that `uml-eval` reads**, such as `--node-module
+18    cp=./scratch.nix`. It needs no file around the session. But it is a
+18    second way to configure a run, and the one-door decision is against
+18    that.
+18
+18 **A budget for replies (finding 5).** Measured: `events(kind="case")`
+18 returned 233k characters, and `run_phase` returned 114k. A failed
+18 nixkube case puts its whole pod and route dump in the event text.
+18 `events` limits how many events it returns (50), but not their size.
+18 The proposal has two parts:
+18
+18 1. **In the MCP server.** Each reply gets a budget: 16k characters by
+18    default, and a `max_chars` argument changes it. The server cuts each
+18    event's text to its last 2k characters. A cut event carries its line
+18    number in `events.jsonl`, and `events(line=N)` returns it whole. The
+18    same budget applies to `exec`, `inject`, `run_pytest` and
+18    `run_phase`. Their whole output goes to a file under
+18    `<out>/replies/`, and the reply names the file.
+18 2. **At the source.** A large dump is an artifact, not event text. The
+18    consumer writes it under `/artifacts`, and the event carries the
+18    path. This is guidance for nixkube. It becomes a helper in
+18    `uml_runner` when a second consumer needs it.
+18
+18 Part 1 comes first, because it keeps the context small whatever a
+18 consumer does.
+18
+18 **Two things named "exec" (finding 7).** Carl read `exec` as Python
+18 that runs inside a guest. That is not what exists today:
+18
+18 - **`exec` runs Python on the host**, in the paused session's
+18   namespace: `session`, `vms`, and each guest as a `Machine`. It
+18   reaches a guest the same way a phase does, with shell strings through
+18   the agent (`await cp.succeed("...")`). It calls runner code. It does
+18   not replace it. Finding 7 is about this one: when `succeed` raises,
+18   the command's output is in the traceback text and not in the reply's
+18   `output` field.
+18 - **Python inside a guest does not exist.** The guest agent is a
+18   Python process already (`uml_runner/agent.py`), but it offers only
+18   `exposed_run`, which runs shell. An `exposed_python(source)` is small.
+18   This is "Python instead of bash into the guests".
+18
+18 The two can both exist. Open question 15 asks whether the second one
+18 is wanted.
+18
+18 ### Order
+18
+18 Each step lands alone. Small, independent steps come first. The merge
+18 comes last, because it moves every consumer.
+18
+18 | step | what | finding | state | needs |
+18 | --- | --- | --- | --- | --- |
+18 | 1 | quiet monitor | 3 | decided | question 14 |
+18 | 2 | evaluated signal | 6 | decided | — |
+18 | 3 | reply budget, MCP part | 5 | proposed | question 17 |
+18 | 4 | `defaults` | 1 | decided | — |
+18 | 5 | `.extend` | 1 | proposed | question 16 |
+18 | 6 | Kata console helper, in the Kata test | 4 | decided | — |
+18 | 7 | `exec` output; Python in a guest | 7 | open | question 15 |
+18 | 8 | one door: this repository's tests and nixkube's `ciTest` move to `mkSession`, then `mkTest` goes | 2 | decided | 4 and 5 make the move easier |
+18
 1 ## What "any machine" means
 1
 1 UML is Linux only. QEMU without KVM is slow enough to be a different
@@ -1145,6 +1270,15 @@
 5    area 0c for the table.
 5 12. **Where do the CLI's build output and build failures go?** New
 5    surface: realising a derivation moves inside the runner.
+18 14. **When does a quiet monitor exit?** At the first pause, so that
+18    an agent's Monitor ends and wakes it once? Or at the verdict, with
+18    one line for each pause? Carl: not clear yet.
+18 15. **Is Python inside a guest wanted?** And if so, what may it
+18    import there? See area 9.
+18 16. **How does an override reach a session from outside?**
+18    Recommended: `.extend`. The alternative is a knob in `uml-eval`.
+18 17. **Are 16k characters a reply and 2k an event the right budget?**
+18    Both numbers are a first guess.
 1
 1 ## Issues
 1
