@@ -32,7 +32,7 @@ nix run --file . uml-eval -- run pytest-phase --out ./out -- -k hostname
 nix run --file . uml-eval -- phases recipes
 ```
 
-`uml-eval` evaluates with nanopynix, builds the attribute's `.run` (so
+`uml-eval` evaluates with nanopynix, builds the attribute's `.driver` (so
 the phase type check runs) and hands the spec to `uml run`. A check that
 wraps a session carries it as `.session`, and `uml-eval` steps into it,
 so the check's name works. Evaluation is impure, like `nix build

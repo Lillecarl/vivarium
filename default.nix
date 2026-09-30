@@ -227,8 +227,8 @@ let
     flag doing anything. The only honest proof is by hand, on a connected
     host, comparing the two:
 
-        nix run --file . uplink.run -- --out ./out
-        nix run --file . uplink.run -- --out ./out --offline
+        nix run --file . uplink.driver -- --out ./out
+        nix run --file . uplink.driver -- --out ./out --offline
 
     Measured on 2026-09-23, this host, UML backend:
 
@@ -263,7 +263,7 @@ let
 
     By hand:
 
-        nix run --file . incr.run -- --out ./out
+        nix run --file . incr.driver -- --out ./out
   */
   incr = mkSession {
     name = "incr";
@@ -485,7 +485,7 @@ let
         ''
           export HOME="$TMPDIR"
           out_dir="$TMPDIR/run"
-          ${lib.getExe run.run} --out "$out_dir" --only only
+          ${lib.getExe run.driver} --out "$out_dir" --only only
           echo "--- phases.json ---"
           cat "$out_dir/phases.json"
 
@@ -1118,7 +1118,7 @@ let
           cp "$(jq -r .kernel ${run.spec})" "$TMPDIR/linux"
           chmod +x "$TMPDIR/linux"
 
-          ${lib.getExe run.run} --out "$TMPDIR/good" --kernel "$TMPDIR/linux" \
+          ${lib.getExe run.driver} --out "$TMPDIR/good" --kernel "$TMPDIR/linux" \
             || fail "the run with a copied kernel failed"
           jq -e --arg k "$TMPDIR/linux" 'select(.kind == "note" and .data.kernel == $k)' \
             "$TMPDIR/good/events.jsonl" > /dev/null || fail "the run did not record the override"
@@ -1126,7 +1126,7 @@ let
 
           printf 'not a kernel\n' > "$TMPDIR/bogus"
           chmod +x "$TMPDIR/bogus"
-          if ${lib.getExe run.run} --out "$TMPDIR/bad" --kernel "$TMPDIR/bogus"; then
+          if ${lib.getExe run.driver} --out "$TMPDIR/bad" --kernel "$TMPDIR/bogus"; then
             fail "a run whose kernel is not a kernel passed -- the override is ignored"
           fi
           echo "ok: and a path that is not a kernel fails the boot"
@@ -1168,7 +1168,7 @@ let
           ctl() { ${lib.getExe session} ctl --out "$o" "$@"; }
           fail() { echo "$*" >&2; kill "$pid" 2>/dev/null; exit 1; }
 
-          ${lib.getExe run.run} --out "$o" --break later > run.log 2>&1 &
+          ${lib.getExe run.driver} --out "$o" --break later > run.log 2>&1 &
           pid=$!
 
           for _ in $(seq 1 600); do

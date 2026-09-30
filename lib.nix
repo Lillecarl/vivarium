@@ -566,11 +566,17 @@ rec {
     that phase needs and the knobs it reads in a single import -- and a
     consumer overrides any of it the way they override a NixOS option.
 
-    Three attributes come out, and they are one program run three ways:
+    One program, run several ways. The derivation itself is the
+    sandboxed run, which CI builds, and these come with it:
 
-        .check   the sandboxed derivation, which CI builds
-        .run     the same run by hand, `--out` where you want it
-        .phases  what would run, in order, without booting anything
+        .driver             the same run by hand, `--out` where you want it
+        .driverDebug        the same, paused on the first failure
+        .driverInteractive  a REPL, paused before the first phase, with
+                            `interactive` merged in
+        .phases             what would run, in order, without booting
+        .nodes, .config     the evaluated guests and run
+        .extend { modules; }  the run with more modules
+        .uml, .qemu, .container  every guest on that backend
 
     A phase script exports one coroutine:
 
