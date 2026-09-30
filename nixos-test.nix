@@ -19,7 +19,9 @@
     `vivarium.nixDatabase.extraRoots`: the guest's store is the host's
     already, so what a path needs is to be registered, not copied.
   - `testScript` becomes one phase after `boot`, run through
-    `vivarium_runner.nixos_test`, which gives it nixos-test's API.
+    `vivarium_runner.nixos_test`, which gives it nixos-test's API. Every
+    store path it names is registered in each guest, as nixos-test's
+    guests see every path their driver holds.
 
   Anything else nixos-test takes (`meta`, `sshBackdoor`, ...) is
   accepted and not used. `enableOCR` is refused: nothing here reads a
@@ -149,6 +151,11 @@ let
   script =
     if lib.isFunction t.testScript then t.testScript { inherit ((mkTest run)) nodes; } else t.testScript;
 
+  # The script's own string context, as a store path whose closure a
+  # guest can register. Not `phase`: that is the run's, and a guest
+  # cannot name the run it is part of.
+  scriptPaths = pkgs.writeText "${t.name}-testScript-paths" script;
+
   phase = pkgs.writeText "${t.name}-testScript.py" ''
     """nixos-test's testScript for ${t.name}; see vivarium_runner/nixos_test.py."""
 
@@ -167,6 +174,7 @@ if t.enableOCR then
 else
   mkTest {
     imports = [ run ];
+    defaults.vivarium.nixDatabase.extraRoots = [ "${scriptPaths}" ];
     phases.test = {
       script = phase;
       after = [ "boot" ];

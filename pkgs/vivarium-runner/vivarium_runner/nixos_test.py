@@ -86,10 +86,12 @@ class Machine:
         # per-user packages are on PATH (simple-container's `hello` needs
         # it), then strict mode, which a script relies on to fail a broken
         # pipeline or an unset variable. The profile before strict mode:
-        # it reads variables that may be unset.
+        # it reads variables that may be unset. stderr goes to the console,
+        # as the backdoor's does: a script parses what `succeed` returns,
+        # and `nix build --print-out-paths` prints its progress on stderr.
         wrapped = (
             "export USER=root HOME=/root; source /etc/profile >/dev/null 2>&1; "
-            f"set -euo pipefail; {command}"
+            f"exec 2>/dev/console; set -euo pipefail; {command}"
         )
         return self._call(self._guest.execute, wrapped, timeout=_seconds(timeout))
 
