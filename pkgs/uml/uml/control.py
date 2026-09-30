@@ -355,6 +355,27 @@ class Controller:
     def _state(self) -> dict[str, str]:
         return {name: str(state) for name, state in self.session.state.items()}
 
+    # ── what `uml run --interactive` calls, in the same process ─────
+
+    async def execute(self, source: str) -> Reply:
+        """`exec`, from the REPL rather than the socket."""
+        if not self.paused:
+            return Reply(ok=False, error="only while paused; the run is running")
+        return self._record("exec", await self.console.execute(source))
+
+    async def run_phase(self, name: str) -> str:
+        """Run one declared phase; its state. Called from REPL code, which
+        runs while the drive is paused."""
+        reply = await self._run(name)
+        if reply.error:
+            print(reply.error)
+        return reply.result or ""
+
+    def resume(self) -> None:
+        """Let the remaining phases run, once the current input returns."""
+        if self._resume is not None:
+            self._resume.set()
+
 
 # ── the client ──────────────────────────────────────────────────────
 

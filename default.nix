@@ -960,6 +960,25 @@ let
       };
     };
 
+    # Does `.driverInteractive` behave like nixos-test's? tests/interactive.py.
+    interactive =
+      let
+        run = mkSession {
+          name = "interactive";
+          nodes.one = { };
+          interactive.nodes.one.environment.etc."uml-interactive".text = "yes\n";
+          phases.hello = {
+            script = ./tests/phases/hello.py;
+            after = [ "boot" ];
+          };
+        };
+      in
+      pkgs.runCommand "uml-check-interactive" { passthru.session = run; } ''
+        export HOME=$TMPDIR
+        ${pkgs.python3.interpreter} ${./tests/interactive.py} ${lib.getExe run.driverInteractive} "$TMPDIR"
+        touch $out
+      '';
+
     # Does a run leave nothing behind, however it ends? tests/cleanup.py.
     cleanup =
       let

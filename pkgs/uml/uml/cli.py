@@ -26,7 +26,7 @@ from pathlib import Path
 import anyio
 from uml_runner import MachineError
 
-from . import monitor, namespace, runroot
+from . import monitor, namespace, repl, runroot
 from .control import SOCKET, Controller, Op, request
 from .events import Kind, Level
 from .phases import PhaseState, launchable, ready, summarise
@@ -88,6 +88,20 @@ def parse(argv: list[str] | None = None) -> argparse.Namespace:
             "boot this kernel instead of the one Nix built: `linux` from a UML"
             " tree, a bzImage for QEMU (virtio built in). For iterating on a"
             " kernel without a Nix build per change; never the check's kernel"
+        ),
+    )
+    run.add_argument(
+        "--break-on-start",
+        action="store_true",
+        help="pause before the first phase, with the guests up",
+    )
+    run.add_argument(
+        "--interactive",
+        action="store_true",
+        help=(
+            "a Python REPL on this terminal, as nixos-test's driverInteractive:"
+            " pause before the first phase, after a failure and after the last"
+            " phase; ^D tears the run down"
         ),
     )
     run.add_argument(
@@ -267,7 +281,9 @@ async def run(args: argparse.Namespace) -> int:
             await drive(
                 session,
                 breaks=args.breaks,
-                break_on_failure=args.break_on_failure,
+                break_on_failure=args.break_on_failure or args.interactive,
+                break_on_start=args.break_on_start or args.interactive,
+                interactive=args.interactive,
                 serial=args.serial,
             )
             group.cancel_scope.cancel()
@@ -298,6 +314,8 @@ async def drive(
     *,
     breaks: Collection[str] = (),
     break_on_failure: bool = False,
+    break_on_start: bool = False,
+    interactive: bool = False,
     serial: bool = False,
 ) -> None:
     """Boot, run what is pending, write the evidence, put the guests down.
@@ -311,13 +329,24 @@ async def drive(
     often what explains the failure. The control socket exists only when
     a breakpoint was asked for.
     """
-    control = Controller(session) if breaks or break_on_failure else None
+    wanted = breaks or break_on_failure or break_on_start or interactive
+    control = Controller(session) if wanted else None
     async with anyio.create_task_group() as group:
         group.start_soon(session.follow)
         if control is not None:
             await group.start(control.serve)
+            if interactive:
+                group.start_soon(repl.serve, control)
         try:
-            await _sequence(session, control, set(breaks), break_on_failure, serial)
+            await _sequence(
+                session,
+                control,
+                set(breaks),
+                break_on_failure,
+                serial,
+                start=break_on_start,
+                end=interactive,
+            )
         finally:
             group.cancel_scope.cancel()
 
@@ -328,13 +357,20 @@ async def _sequence(
     breaks: set[str],
     break_on_failure: bool,
     serial: bool = False,
+    *,
+    start: bool = False,
+    end: bool = False,
 ) -> None:
     try:
         # Inside the `try`, not before it. `_start_all` lets every guest
         # settle before reporting, so a failed boot can leave others
         # running -- and outside this block nothing would ever stop them.
         await session.boot()
+        if start and control is not None:
+            await control.pause("before the first phase")
         await _schedule(session, control, breaks, break_on_failure, serial)
+        if end and control is not None:
+            await control.pause("after the last phase")
     except MachineError as error:
         # A guest that would not boot. Every phase stays pending, so the
         # run fails on its own account below; this only keeps a traceback
