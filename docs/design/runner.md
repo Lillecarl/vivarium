@@ -225,5 +225,9 @@ a test.
 
 ## Order of work
 
-1. Rename the project (issue #18), then move nixkube to `mkTest`.
+1. Rename the project to **vivarium** (issue #18; Carl, 2026-09-30),
+   everywhere: repository, CLI, MCP server, Python packages, `UML_*`
+   variables and the `boot.uml.*` options. The umbrella is nixidae, and
+   a vivarium is where it keeps its guests. Rewrite the README so the
+   repository is easy to approach. Then move nixkube to `mkTest`.
 2. The agent-experience items.
