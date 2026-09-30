@@ -15,6 +15,7 @@ was documented and rejected.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import functools
 import os
 import shlex
@@ -502,6 +503,12 @@ async def ctl(args: argparse.Namespace) -> int:
     except OSError as error:
         print(f"[vivarium] no run is listening at {socket}: {error}", file=sys.stderr)
         return 1
+    if args.op == Op.CONTINUE and reply.ok:
+        # The run emits `resumed` in the same step that ends the pause, so
+        # once `state` says running, a monitor armed now replays no open pause.
+        with anyio.move_on_after(10), contextlib.suppress(OSError):
+            while (await request(socket, Op.STATE)).result == "paused":
+                await anyio.sleep(0.05)
     if reply.output:
         print(reply.output, end="" if reply.output.endswith("\n") else "\n")
     if reply.result is not None:
@@ -528,17 +535,17 @@ def main(argv: list[str] | None = None) -> None:
         raise SystemExit(anyio.run(ctl, args))
     if args.command == "monitor":
         socket = monitor.locate(args.target)
+        options = {"as_json": args.json, "quiet": args.quiet, "until_pause": args.until_pause}
         try:
-            follow = functools.partial(
-                monitor.follow, socket, as_json=args.json, quiet=args.quiet, until_pause=args.until_pause
-            )
-            raise SystemExit(anyio.run(follow))
-        except (FileNotFoundError, ConnectionRefusedError) as error:
-            # No socket, or nobody behind it: the server that started the
-            # run is gone. What the run wrote is still on the disk.
-            print(f"[vivarium] cannot follow {socket}: {error}", file=sys.stderr, flush=True)
-            print(f"[vivarium] read {socket.parent / 'events.jsonl'} instead", file=sys.stderr, flush=True)
-            raise SystemExit(3) from None
+            try:
+                raise SystemExit(anyio.run(functools.partial(monitor.follow, socket, **options)))
+            except (FileNotFoundError, ConnectionRefusedError):
+                # No vivarium-mcp behind this run: follow what it writes.
+                pass
+            if not (socket.parent / "events.jsonl").exists():
+                print(f"[vivarium] no run in {socket.parent}: no events.jsonl", file=sys.stderr, flush=True)
+                raise SystemExit(3)
+            raise SystemExit(anyio.run(functools.partial(monitor.follow_file, socket.parent, **options)))
         except KeyboardInterrupt:
             raise SystemExit(130) from None
     try:

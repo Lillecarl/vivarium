@@ -7,7 +7,7 @@ from pathlib import Path
 import anyio
 import pytest
 
-from vivarium.monitor import LIVE, PAUSED, SOCKET, follow, line, locate, paused_now, status
+from vivarium.monitor import LIVE, PAUSED, SOCKET, follow, follow_file, line, locate, paused_now, status
 
 
 class TestLine:
@@ -163,3 +163,71 @@ async def test_until_pause_exits_at_an_open_pause(tmp_path: Path, events, until_
 async def test_live_is_not_printed(tmp_path: Path, capsys):
     await _follow(tmp_path, [PAUSE, LIVE], until_pause=True, quiet=True)
     assert capsys.readouterr().out.splitlines() == ["r paused: paused after boot failed"]
+
+
+def _write(out: Path, *events: dict) -> None:
+    with (out / "events.jsonl").open("a") as file:
+        for event in events:
+            file.write(json.dumps(event) + "\n")
+
+
+STARTED = {"kind": "phase_started", "phase": "boot"}
+NOTE_PAUSED = {"kind": "note", "data": {"reason": "after boot failed"}}
+NOTE_RESUMED = {"kind": "note", "data": {"resumed": "after boot failed"}}
+VERDICT = {"kind": "run_finished", "data": {"passed": False, "states": {"boot": "failed"}}}
+
+
+class TestFollowFile:
+    """A run that no vivarium-mcp started: the monitor reads events.jsonl."""
+
+    @pytest.mark.anyio
+    async def test_a_finished_run_replays_to_its_verdict(self, tmp_path: Path, capsys):
+        _write(tmp_path, STARTED, VERDICT)
+        with anyio.fail_after(5):
+            assert await follow_file(tmp_path, grace=0) == 1
+        assert capsys.readouterr().out.splitlines() == [
+            f"{tmp_path.name} progress boot: phase boot started",
+            f"{tmp_path.name} finished: run failed: boot failed",
+        ]
+
+    @pytest.mark.anyio
+    async def test_a_run_gone_without_a_verdict_is_2(self, tmp_path: Path):
+        _write(tmp_path, STARTED)
+        with anyio.fail_after(5):
+            assert await follow_file(tmp_path, grace=0.3) == 2
+
+    @pytest.mark.anyio
+    async def test_it_waits_while_the_run_is_up(self, tmp_path: Path):
+        (tmp_path / "control.sock").touch()
+        _write(tmp_path, STARTED, NOTE_PAUSED)
+        async with anyio.create_task_group() as group:
+            codes = []
+
+            async def watch() -> None:
+                codes.append(await follow_file(tmp_path, grace=0))
+
+            group.start_soon(watch)
+            await anyio.sleep(0.8)
+            # The pause alone ends nothing without --until-pause.
+            assert codes == []
+            _write(tmp_path, NOTE_RESUMED, VERDICT)
+            (tmp_path / "control.sock").unlink()
+            with anyio.fail_after(5):
+                while not codes:
+                    await anyio.sleep(0.05)
+        assert codes == [1]
+
+    @pytest.mark.anyio
+    async def test_until_pause_exits_at_an_open_pause(self, tmp_path: Path):
+        (tmp_path / "control.sock").touch()
+        _write(tmp_path, STARTED, NOTE_PAUSED)
+        with anyio.fail_after(5):
+            assert await follow_file(tmp_path, grace=0, until_pause=True) == PAUSED
+
+    @pytest.mark.anyio
+    async def test_until_pause_runs_on_past_a_closed_pause(self, tmp_path: Path):
+        (tmp_path / "control.sock").touch()
+        _write(tmp_path, STARTED, NOTE_PAUSED, NOTE_RESUMED)
+        with anyio.move_on_after(0.8) as scope:
+            await follow_file(tmp_path, grace=0, until_pause=True)
+        assert scope.cancelled_caught

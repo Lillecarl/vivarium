@@ -44,7 +44,7 @@ from mcp.shared.message import SessionMessage
 from mcp.types import JSONRPCMessage, JSONRPCNotification
 from vivarium.control import SOCKET, Op, Reply, reachable, request
 from vivarium.journal import Tail
-from vivarium.monitor import LIVE, SOCKET as MONITOR_SOCKET, TERMINAL, paused_now
+from vivarium.monitor import LIVE, SOCKET as MONITOR_SOCKET, TERMINAL, channel_event, paused_now
 
 from .cli import split_attr
 
@@ -86,50 +86,6 @@ tears the guests down.
 
 
 # ── pure ────────────────────────────────────────────────────────────
-
-
-def channel_event(event: dict[str, Any], run: str) -> tuple[str, dict[str, str]] | None:
-    """What of the run's event stream is worth interrupting Claude for.
-
-    A pause, a failed phase and the verdict. Everything else stays in
-    `events.jsonl`, where `events` can ask for it: a channel event is
-    context in the conversation, and a journal line each is a flood.
-    Meta keys are identifiers only; Claude Code drops any other key.
-    """
-    kind = event.get("kind")
-    data = event.get("data") or {}
-    meta = {"run": run}
-    # Facts only. Claude Code frames channel content as untrusted and
-    # tells the model not to act on imperative language in it, so what
-    # to do next belongs in the server's `instructions`, which it trusts.
-    if kind == "note" and "resumed" in data:
-        meta |= {"event": "resumed", "reason": str(data["resumed"])}
-        return f"resumed, paused {data['resumed']}", meta
-    if kind == "note" and "reason" in data:
-        meta |= {"event": "paused", "reason": str(data["reason"])}
-        return f"paused {data['reason']}; the guests are up until the run is resumed or stopped", meta
-    # Progress, so a run of many minutes is not silent until it ends:
-    # measured, a nixkube run showed the user nothing for its first
-    # quarter of an hour. One event per phase boundary, not per line.
-    if kind == "phase_started":
-        phase = str(event.get("phase", ""))
-        meta |= {"event": "progress", "phase": phase, "state": "started"}
-        return f"phase {phase} started", meta
-    if kind == "phase_finished" and data.get("state") == "passed":
-        phase = str(event.get("phase", ""))
-        meta |= {"event": "progress", "phase": phase, "state": "passed"}
-        return f"phase {phase} passed in {event.get('seconds', 0):.0f}s", meta
-    if kind == "phase_finished" and data.get("state") == "failed":
-        phase = str(event.get("phase", ""))
-        meta |= {"event": "failed", "phase": phase}
-        return f"phase {phase} failed: {data.get('error', '')}".strip(), meta
-    if kind == "run_finished":
-        passed = bool(data.get("passed"))
-        meta |= {"event": "finished", "passed": "true" if passed else "false"}
-        states = data.get("states") or {}
-        summary = ", ".join(f"{name} {state}" for name, state in states.items())
-        return f"run {'passed' if passed else 'failed'}: {summary}", meta
-    return None
 
 
 def select(
