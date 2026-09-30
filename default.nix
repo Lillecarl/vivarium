@@ -1361,7 +1361,11 @@ let
           services.vivarium-k8s = {
             enable = true;
             role = "worker";
-            runtimes = [ "crun" ] ++ lib.optional (config.vivarium.backend != "uml") "runsc";
+            runtimes = [
+              "crun"
+              "youki"
+            ]
+            ++ lib.optional (config.vivarium.backend != "uml") "runsc";
           };
           vivarium = {
             memory = "1024M";
@@ -1405,7 +1409,10 @@ let
             cri = "crio";
             # Not runsc, which runs no container under CRI-O; see the
             # module's assertion.
-            runtimes = [ "crun" ];
+            runtimes = [
+              "crun"
+              "youki"
+            ];
           };
           vivarium = {
             memory = "1024M";

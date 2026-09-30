@@ -507,8 +507,8 @@ let
   /*
     The OCI runtimes a pod can ask for by `runtimeClassName`, beside runc.
 
-    crun is a second runc: same shim, same spec, another binary. runsc is
-    gVisor, and brings its own shim. Its `systemd-cgroup` matches the
+    crun and youki are more runcs: same shim, same spec, another binary.
+    runsc is gVisor, and brings its own shim. Its `systemd-cgroup` matches the
     `SystemdCgroup` runc gets -- kubelet hands every runtime a cgroup parent
     in the systemd form, and runsc refuses one it was not told to expect.
     kata runs each pod in a QEMU VM of its own, through its own shim.
@@ -518,6 +518,13 @@ let
       runtime_type = "io.containerd.runc.v2";
       options = {
         BinaryName = lib.getExe pkgs.crun;
+        SystemdCgroup = true;
+      };
+    };
+    youki = {
+      runtime_type = "io.containerd.runc.v2";
+      options = {
+        BinaryName = lib.getExe pkgs.youki;
         SystemdCgroup = true;
       };
     };
@@ -650,6 +657,7 @@ in
       type = lib.types.listOf (
         lib.types.enum [
           "crun"
+          "youki"
           "runsc"
           "kata"
         ]
@@ -859,6 +867,9 @@ in
         // lib.genAttrs cfg.runtimes (_: { })
         // lib.optionalAttrs (lib.elem "runsc" cfg.runtimes) {
           runsc.runtime_root = "/run/runsc";
+        }
+        // lib.optionalAttrs (lib.elem "youki" cfg.runtimes) {
+          youki.runtime_path = lib.getExe pkgs.youki;
         }
         // lib.optionalAttrs (lib.elem "kata" cfg.runtimes) {
           kata = {
