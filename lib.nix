@@ -552,6 +552,9 @@ rec {
         ln -s ${attempt}/artifacts $out/artifacts
       '';
 
+  # nixos-test's shape, mapped onto mkSession; see nixos-test.nix.
+  fromNixosTest = import ./nixos-test.nix { inherit pkgs lib mkSession; };
+
   /**
     A run: guests, and the phases that drive them.
 

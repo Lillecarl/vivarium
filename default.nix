@@ -29,7 +29,15 @@ let
   inherit (pkgs) lib;
 
   uml = import ./lib.nix { inherit pkgs lib; };
-  inherit (uml) mkNode mkSession mkTest runner session typeCheck;
+  inherit (uml)
+    mkNode
+    mkSession
+    mkTest
+    fromNixosTest
+    runner
+    session
+    typeCheck
+    ;
 
   # Two guests on one segment, addressed statically.
   pair = network: {
@@ -962,6 +970,17 @@ let
       };
     };
 
+    /*
+      nixpkgs' own nixos tests, through the mapper, unchanged. Cheap ones
+      with no screen: `nixos-tests.simple-vm`, and so on.
+    */
+    nixos-tests = lib.genAttrs [
+      "simple-vm"
+      "systemd-no-tainted"
+      "oh-my-zsh"
+      "simple-container"
+    ] (name: fromNixosTest (pkgs.path + "/nixos/tests/${name}.nix"));
+
     # Does `.driverInteractive` behave like nixos-test's? tests/interactive.py.
     interactive =
       let
@@ -1436,7 +1455,7 @@ in
 tests
 // {
   # The library, for a caller that writes its own test.
-  inherit mkNode mkSession mkTest runner session typeCheck;
+  inherit mkNode mkSession mkTest fromNixosTest runner session typeCheck;
   lib = { inherit mkNode mkSession mkTest runner session typeCheck; };
 
   inherit demo store k8s-pull uplink incr;
