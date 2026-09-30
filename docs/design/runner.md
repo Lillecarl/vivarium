@@ -97,12 +97,21 @@ Both drivers take the same flags at run time: `--break PHASE`,
 `--break-on-start`, `--only`, `--offline`. Nothing about a run's mode is
 set in Nix.
 
-**Cleanup always happens**, unless a flag turns it off. However a run
-ends, success, failure, ^C or SIGKILL of the runner, it leaves no
-guest, helper, mount or run directory behind. A check proves the
-SIGKILL case. The run's mount namespace already takes every store
-view with it; the run directories can live on a tmpfs in that
-namespace, so they go with it too.
+**Cleanup always happens**, unless `--keep` turns it off. However a run
+ends, success, failure, ^C, SIGTERM or SIGKILL of the runner, it
+leaves no guest, helper, mount or run directory behind (`cleanup`,
+sandboxed, with a negative control). Built:
+
+- One run root per run holds everything outside `--out`; `TMPDIR`
+  and the short-path socket fallbacks point into it.
+- A cleaner, forked before the namespace, waits on the runner's pidfd
+  in a session of its own and removes the root however the runner
+  died. A reaper at start removes roots whose runner and cleaner are
+  both gone.
+- SIGTERM and SIGHUP take the ^C path. Each guest that was asked to
+  power off gets 20 s, then its process group gets SIGTERM, 30 s,
+  then SIGKILL.
+- Store views go with the run's mount namespace.
 
 The MCP server drives this runner only. It knows nothing of
 nixos-test's driver; a nixos-test spec reaches it through the compat
