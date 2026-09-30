@@ -1214,6 +1214,52 @@
 18 | 6 | Kata console helper, in the Kata test | 4 | decided | — |
 18 | 7 | `exec` output; Python in a guest | 7 | open | question 15 |
 18 | 8 | one door: this repository's tests and nixkube's `ciTest` move to `mkSession`, then `mkTest` goes | 2 | decided | 4 and 5 make the move easier |
+19
+19 ### Round 19: one entrypoint, and one run
+19
+19 Decided:
+19
+19 - **The entrypoint follows nixos-test.** Its option names and output
+19   names are the model, so a NixOS developer knows them already.
+19 - **Unsandboxed and offline is the same run as sandboxed.** The guests
+19   are the same derivations, and they see the same store. So a failure
+19   in CI reproduces by hand, and nixos-test's `enableDebugHook` (a
+19   pause inside the sandbox, attached with `sudo`) is not needed.
+19 - **A sandboxed run only exits on failure.** Nothing can talk to it.
+19 - **Pause-on-failure is chosen at run time, never in Nix.** The runner
+19   reads it from an environment variable or a flag, so no derivation
+19   changes. The unsandboxed outputs include two wrappers: one pauses on
+19   failure and one exits on failure. The MCP server starts the one that
+19   pauses.
+19 - **A normal run needs no Nix daemon,** sandboxed or not. Everything is
+19   built before the runner starts.
+19 - **Guests are declared one by one**, so a caller changes one guest in
+19   Nix and does not rebuild it from Python at run time.
+19 - **Pause on start.** The runner stops before the first phase. A caller
+19   then sets breakpoints, or changes which phases run and in what order,
+19   and then continues. Rebuilding a guest from that pause (with `extend`
+19   and the host's daemon) is possible, but it is not a goal.
+19
+19 A fact that breaks "the same run": **an unsandboxed guest sees the
+19 whole host `/nix`.** `MachineSpec.store` is `/nix` by default
+19 (`uml_runner/machine.py`). UML serves it over hostfs, and QEMU over
+19 virtiofs as the overlay's lower layer (`modules/qemu.nix`). In the
+19 sandbox the same guest sees only the closure of the run's inputs. So a
+19 guest that uses a path it never declared passes by hand and fails in
+19 CI. The guest's Nix database is the same in both, because the image
+19 carries it; only direct file access differs.
+19
+19 Proposed: the unsandboxed runner gives the guests a store that holds
+19 only the run's closure. It does this the way the Nix sandbox does:
+19 in a user and mount namespace, one read-only bind for each path in the
+19 closure, and hostfs and virtiofsd started inside that namespace. The
+19 container backend has a user namespace already (area 8). Still to
+19 measure: the time to make the binds for a closure of a Kubernetes
+19 guest, and whether hostfs follows a bind mount.
+19
+19 Still open: whether the closure is the guests' closure or the whole
+19 input closure of the sandboxed attempt. The second one is what the
+19 sandbox really holds.
 18
 1 ## What "any machine" means
 1
