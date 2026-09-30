@@ -32,7 +32,7 @@ A run is guests plus phases. Each phase is a Python module exporting one
 coroutine, and Nix says what order they go in.
 
 ```nix
-mkSession {
+mkTest {
   name = "mine";
   nodes.one = { };
   phases = {

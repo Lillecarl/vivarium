@@ -31,7 +31,6 @@ let
   uml = import ./lib.nix { inherit pkgs lib; };
   inherit (uml)
     mkNode
-    mkSession
     mkTest
     fromNixosTest
     runner
@@ -71,7 +70,7 @@ let
   # the ceiling costs nothing until touched.
   kataTest =
     cri:
-    mkSession {
+    mkTest {
       name = "kata-${cri}";
       backend = "qemu";
       phases.test = {
@@ -171,7 +170,7 @@ let
     and a build sandbox has no `/nix/var` in it at all.  Run it by hand
     -- tests/store.py says how at its head.
   */
-  store = mkSession {
+  store = mkTest {
     name = "store";
     phases.test = {
       script = ./tests/store.py;
@@ -210,7 +209,7 @@ let
     10.104, and not the 10.100 `k8s` uses: unsandboxed, a guest routes for
     real, and this host has a WireGuard interface on 10.100.0.1/24.
   */
-  k8s-pull = mkSession {
+  k8s-pull = mkTest {
     name = "k8s-pull";
     backend = "qemu";
     phases.test = {
@@ -258,7 +257,7 @@ let
     take vec0 with it, so a test reaching an API server through a forward
     would fail for a reason that is not the one being reproduced.
   */
-  uplink = mkSession {
+  uplink = mkTest {
     name = "uplink";
     nodes.one = { };
     phases = {
@@ -282,7 +281,7 @@ let
 
         nix run --file . incr.driver -- --out ./out
   */
-  incr = mkSession {
+  incr = mkTest {
     name = "incr";
     nodes.one = { };
     phases.incr = {
@@ -293,7 +292,7 @@ let
 
   tests = {
     # Do the guests boot, see each other on vec1, and answer the host?
-    lan = mkSession {
+    lan = mkTest {
       name = "lan";
       phases.test = {
         script = ./tests/lan.py;
@@ -311,7 +310,7 @@ let
       be checked any other way, since passt's forwards are fixed for
       its lifetime.
     */
-    forward = mkSession {
+    forward = mkTest {
       name = "forward";
       phases.test = {
         script = ./tests/forward.py;
@@ -329,7 +328,7 @@ let
       Two guests, because each one must get its own directory.
       `pkgs.util-linux` for `mountpoint`.
     */
-    artifacts = mkSession {
+    artifacts = mkTest {
       name = "artifacts";
       phases.test = {
         script = ./tests/artifacts.py;
@@ -360,7 +359,7 @@ let
     */
     phase-rules =
       let
-        run = mkSession {
+        run = mkTest {
           name = "phase-rules";
           nodes.one = { };
           phases = {
@@ -434,7 +433,7 @@ let
       sees it, which keeps a guest's behaviour a function of its own
       configuration.
     */
-    knobs = mkSession {
+    knobs = mkTest {
       name = "knobs";
       nodes.one = { };
       knobs.selection = {
@@ -469,7 +468,7 @@ let
     */
     only-rules =
       let
-        run = mkSession {
+        run = mkTest {
           name = "only";
           nodes.one = { };
           phases = {
@@ -542,7 +541,7 @@ let
     */
     recipes =
       let
-        run = mkSession {
+        run = mkTest {
           name = "recipes";
           nodes.one = { };
           phases = {
@@ -615,7 +614,7 @@ let
     */
     stream =
       let
-        run = mkSession {
+        run = mkTest {
           name = "stream";
           nodes.one = { };
           phases.crash = {
@@ -687,7 +686,7 @@ let
     */
     pytest-phase =
       let
-        run = mkSession {
+        run = mkTest {
           name = "pytest";
           nodes.one = { };
           phases.cases = {
@@ -759,7 +758,7 @@ let
       the host needs subordinate ids and a cgroup it can delegate, and
       the runner says which is missing.
     */
-    container = mkSession {
+    container = mkTest {
       name = "container";
       nodes.one.boot.uml.backend = "container";
       phases.check = {
@@ -775,7 +774,7 @@ let
     container-probe-tun = uml.containerProbe { tun = true; };
 
     # Two containers and a UML guest on one segment. By hand, as above.
-    container-lan = mkSession {
+    container-lan = mkTest {
       name = "container-lan";
       nodes = lib.mapAttrs (name: value: {
         boot.uml = {
@@ -805,7 +804,7 @@ let
       By hand: the QEMU guest needs /dev/kvm, which the session job in CI
       does not have.
     */
-    mixed = mkSession {
+    mixed = mkTest {
       name = "mixed";
       nodes.small.boot.uml = {
         backend = "uml";
@@ -834,7 +833,7 @@ let
       does not nest a second time. Needs nesting on this host
       (`/sys/module/kvm_{intel,amd}/parameters/nested`).
     */
-    nested = mkSession {
+    nested = mkTest {
       name = "nested";
       backend = "qemu";
       nodes.nested = {
@@ -864,7 +863,7 @@ let
     */
     parallel =
       let
-        run = mkSession {
+        run = mkTest {
           name = "parallel";
           nodes.a = { };
           nodes.b = { };
@@ -938,7 +937,7 @@ let
       No guest names another in its own configuration: /etc/hosts comes
       from the `nodes` every guest receives, as in nixos-test.
     */
-    peers = mkSession {
+    peers = mkTest {
       name = "peers";
       defaults.environment.etc."uml-defaults".text = "from-defaults\n";
       nodes.server.boot.uml.lan = {
@@ -959,7 +958,7 @@ let
       Does each guest see only its own closure, on every backend, and can
       it still add paths?
     */
-    store-view = mkSession {
+    store-view = mkTest {
       name = "store-view";
       nodes.u.boot.uml.backend = "uml";
       nodes.q.boot.uml.backend = "qemu";
@@ -984,7 +983,7 @@ let
     # Does `.driverInteractive` behave like nixos-test's? tests/interactive.py.
     interactive =
       let
-        run = mkSession {
+        run = mkTest {
           name = "interactive";
           nodes.one = { };
           interactive.nodes.one.environment.etc."uml-interactive".text = "yes\n";
@@ -1003,7 +1002,7 @@ let
     # Does a run leave nothing behind, however it ends? tests/cleanup.py.
     cleanup =
       let
-        run = mkSession {
+        run = mkTest {
           name = "cleanup";
           nodes.one = { };
           phases.hold = {
@@ -1022,7 +1021,7 @@ let
       IP by name. `mixed` and `container-lan` each prove one pair; this
       holds all three at once.
     */
-    backends = mkSession {
+    backends = mkTest {
       name = "backends";
       nodes = lib.mapAttrs (name: backend: {
         boot.uml = {
@@ -1065,7 +1064,7 @@ let
     */
     guest-suites =
       let
-        run = mkSession {
+        run = mkTest {
           name = "guest-suites";
           nodes.one = { };
           phases = {
@@ -1123,7 +1122,7 @@ let
     */
     kernel-override =
       let
-        run = mkSession {
+        run = mkTest {
           name = "kernel";
           nodes.one = { };
         };
@@ -1169,7 +1168,7 @@ let
     */
     breakpoint =
       let
-        run = mkSession {
+        run = mkTest {
           name = "breakpoint";
           nodes.one = { };
           phases.later = {
@@ -1269,7 +1268,7 @@ let
       and is what puts a setuid fusermount3 under /run/wrappers.  The
       wrappers themselves a guest already has.
     */
-    fuse = mkSession {
+    fuse = mkTest {
       name = "fuse";
       phases.test = {
         script = ./tests/fuse.py;
@@ -1296,7 +1295,7 @@ let
       `madvise(MADV_REMOVE)` and QEMU through virtio-balloon, and a test
       sees one number either way. Issues #12 and #4.
     */
-    memory = mkSession {
+    memory = mkTest {
       name = "memory";
       phases.test = {
         script = ./tests/memory.py;
@@ -1311,7 +1310,7 @@ let
     };
 
     # How much does a segment between two guests actually carry?
-    iperf = mkSession {
+    iperf = mkTest {
       name = "iperf";
       phases.test = {
         script = ./tests/iperf.py;
@@ -1328,7 +1327,7 @@ let
       whether the images imported, and whether a container of
       symlinks can reach the store they point into.
     */
-    containerd = mkSession {
+    containerd = mkTest {
       name = "containerd";
       phases.test = {
         script = ./tests/containerd.py;
@@ -1369,7 +1368,7 @@ let
     kata-containerd = kataTest "containerd";
 
     # The same questions under CRI-O. nixkube#74.
-    crio = mkSession {
+    crio = mkTest {
       name = "crio";
       phases.test = {
         script = ./tests/containerd.py;
@@ -1405,7 +1404,7 @@ let
     # Does a real workload come up across three nodes?  Far heavier
     # than the others: three guests, a control plane and a container
     # runtime, so this one wants a builder rather than a laptop.
-    k8s = mkSession {
+    k8s = mkTest {
       name = "k8s";
       phases.test = {
         script = ./tests/k8s.py;
@@ -1455,8 +1454,8 @@ in
 tests
 // {
   # The library, for a caller that writes its own test.
-  inherit mkNode mkSession mkTest fromNixosTest runner session typeCheck;
-  lib = { inherit mkNode mkSession mkTest runner session typeCheck; };
+  inherit mkNode mkTest fromNixosTest runner session typeCheck;
+  lib = { inherit mkNode mkTest fromNixosTest runner session typeCheck; };
 
   inherit demo store k8s-pull uplink incr;
   inherit (demo.config.system.build) umlRunner umlRootImage toplevel;

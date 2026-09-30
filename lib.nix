@@ -47,7 +47,7 @@ rec {
       extraPackages ? [ ],
       strict ? false,
       ignore ? [ ],
-      # Directories of helper modules the scripts import; `mkSession`'s
+      # Directories of helper modules the scripts import; `mkTest`'s
       # `pythonPath`.
       extraPaths ? [ ],
     }:
@@ -122,8 +122,7 @@ rec {
   /**
     How one guest becomes a line in a spec.
 
-    Shared by `mkTest` and `mkSession` so that the two cannot describe the
-    same machine differently. A field added here reaches both doors.
+    One place, so a field added here reaches every spec.
   */
   machineSpec =
     machine:
@@ -281,293 +280,22 @@ rec {
       ];
     };
 
-  /*
-    A test derivation: `script` run against the guests in `nodes`.
-
-    `nodes` maps a hostname to a NixOS module.  Each becomes a guest,
-    and machines whose `boot.uml.lan.network` matches get an Ethernet
-    segment between them.  ssh ports are handed out from 4325 so that
-    nodes do not have to keep track of them.
-
-    The script gets a JSON spec naming the guests' images and their
-    addresses, and uses uml_runner.run_test to boot them; see
-    tests/ for what one looks like.
-
-    `settings` is anything else the script needs that only Nix knows
-    -- a version, an image tag -- and reaches it as `vms.settings`.
-
-    A store path in `settings` is a dependency like any other: the JSON
-    carries its context, so the derivation builds it and the guest reads
-    it from the host's store.  That is how a caller gets its own program
-    into a guest without an image, a copy or a network.
-
-    `impurities` is the opposite channel: a list of environment variable
-    *names* the run may read from the host, reaching the script as
-    `vms.env`.
-
-        impurities = [ "PYTEST_ARGS" ];
-
-        PYTEST_ARGS='-k mounts' nix run --file . mytest.run
-
-    Names, never values.  A value never enters the spec, so it never
-    enters a store path and no derivation hash moves with it -- which is
-    what lets the same test stay pure under `nix build`.  A sandbox has no
-    environment to read, so every value is empty there and the test does
-    whatever it does by default.  Prefer this to `builtins.getEnv`, which
-    needs an impure evaluation and rebuilds the test for each value.
-
-    The run prints each name and its value before it boots anything.  A
-    misspelled variable is otherwise invisible: the run does the whole
-    suite instead of the one case, and says nothing.
-
-    Anything after `--spec` on the command line reaches the script as
-    `vms.argv`, unparsed:
-
-        nix run --file . mytest.run -- -k mounts
-
-    `backend` picks what the guests become.  The script does not change
-    with it, and neither does a node's configuration: `uml` needs nothing
-    of the host, `qemu` needs `/dev/kvm` and is much faster.  A node may
-    still override `boot.uml.backend` for itself.
-
-    Every test carries `.uml` and `.qemu`, which are the same test forced
-    to that backend.  So the choice needs no Nix edit:
-
-        nix build --file . iperf        # whatever `backend` said
-        nix build --file . iperf.qemu   # the same test, as machines
-
-    And `.run` on each of those is the same test outside the sandbox,
-    with nothing to pass on the command line:
-
-        nix run --file . iperf.run
-        nix run --file . iperf.qemu.run
-
-    **A test derivation never fails.** `.attempt` is the run and always
-    succeeds; the test reads the exit code it wrote and fails on that.  So
-    a failed run keeps its log, its timings and what the guests wrote to
-    `/artifacts`, and the build log says where.
-
-    pyright runs over `script` as an input of the test.
-    `boot.uml.typeCheck` on the first guest is the switch.
-
-    The one named by `backend` keeps the bare derivation name, and is the
-    same derivation as the attribute of that name -- `lan` and `lan.uml`
-    are one store path, not two.
-  */
-  mkTest =
-    args@{
-      backend ? "uml",
-      ...
-    }:
-    let
-      variants = lib.genAttrs [ "uml" "qemu" ] (
-        chosen: mkTestOn (builtins.removeAttrs args [ "backend" ] // { inherit chosen backend; })
-      );
-    in
-    variants.${backend} // { inherit (variants) uml qemu; };
-
-  # One test on one backend. `mkTest` is the door; this is what it calls
-  # twice, so that `.uml` and `.qemu` cannot drift from each other.
-  mkTestOn =
-    {
-      name,
-      script,
-      nodes,
-      settings ? { },
-      impurities ? [ ],
-      # `.uml`, `.qemu`, `.attempt` and `.run` are added after this, so a
-      # name here cannot take one of theirs.
-      passthru ? { },
-      chosen,
-      backend,
-    }:
-    let
-      # The default backend keeps the bare name, so a second one appearing
-      # does not move store paths or rename anything in a CI log.
-      suffix = lib.optionalString (chosen != backend) "-${chosen}";
-
-      /*
-        `settings` on its own, so a guest can be told about the store paths
-        in it.
-
-        A test hands its guests store paths through `settings` -- an image,
-        a program, a chart -- and nothing in the module system sees them, so
-        `boot.uml.nixDatabase` used to need each one named again by hand in
-        `extraRoots`. One that was missed is not a build error: Nix in the
-        guest calls the path invalid and goes looking for a substituter.
-
-        A file is what breaks that. Registering its closure registers every
-        path it mentions, and this file cannot mention the machines, so
-        naming it from a machine is not a cycle -- which naming the spec
-        would be, since the spec names each machine's root image.
-      */
-      settingsFile = pkgs.writeText "uml-${name}${suffix}-settings.json" (builtins.toJSON settings);
-
-      machines = lib.imap0 (
-        index: hostName:
-        (mkNode {
-          imports = [ nodes.${hostName} ];
-          networking.hostName = lib.mkDefault hostName;
-          boot.uml.sshPort = lib.mkDefault (4325 + index);
-          boot.uml.backend = lib.mkDefault chosen;
-          boot.uml.index = index;
-          boot.uml.nixDatabase.extraRoots = lib.optional (settings != { }) "${settingsFile}";
-        }).config
-      ) (lib.attrNames nodes);
-
-      # Every guest builds these from the same pkgs, so any of them
-      # will do.
-      first = lib.head machines;
-
-      # Named in the builder below rather than added to it: naming a store
-      # path is what makes Nix build it, so the check runs before the
-      # guests do.
-      checked =
-        let
-          cfg = first.boot.uml.typeCheck;
-        in
-        lib.optionalString cfg.enable "${typeCheck {
-          name = "${name}${suffix}-script";
-          scripts = [ script ];
-          inherit (cfg) extraPackages strict ignore;
-        }}";
-
-      toolchain = toolchainFor machines;
-
-      spec = pkgs.writeText "uml-${name}${suffix}-spec.json" (
-        builtins.toJSON (
-          toolchain
-          // {
-            inherit settings impurities;
-            machines = map machineSpec machines;
-          }
-        )
-      );
-
-      python = pkgs.python3.withPackages (_: [ first.system.build.umlRunnerPackage ]);
-
-      /*
-        The same run, outside the sandbox: `nix run --file . iperf.run`.
-
-        Nothing about a test belongs on a command line. The spec names the
-        images, the toolchain, the addresses and the ports, and Nix is what
-        built every one of them -- so the invocation is a store path too,
-        and running one by hand is the same run the check makes with the
-        sandbox taken off.
-
-        `$@` reaches the script, which is where a test's own flags go.
-      */
-      run = pkgs.writeShellApplication {
-        name = "run-uml-test-${name}${suffix}";
-        runtimeInputs = [ python ];
-        # `UML_TEST_REPORT` is not set here. A run by hand records only
-        # when it is asked to, so nothing writes to a directory nobody
-        # chose; the sandboxed build below always records, because there
-        # is an output to put it in.
-        text = ''
-          exec python3 ${script} --spec ${spec} "$@"
-        '';
-      };
-
-      /*
-        The run itself, which never fails.
-
-        Nix deletes the output of a derivation that fails, so a test that
-        reports failure by failing throws away the evidence of the one run
-        anybody wanted to read.  This one always succeeds and writes what
-        happened to `status`; the derivation below fails, and reads nothing
-        but that file.
-
-            status       the run's exit code, as text
-            log          everything the run printed
-            report.json  where the time went, see report.py
-            artifacts/   what the guests wrote to /artifacts
-      */
-      attempt =
-        pkgs.runCommand "uml-test-${name}${suffix}-attempt"
-          {
-            nativeBuildInputs = [ python ];
-            requiredSystemFeatures = featuresFor machines;
-            passthru = { inherit spec python run; };
-          }
-          ''
-            export HOME="$TMPDIR"
-            mkdir -p "$out/artifacts"
-            # Empty when `boot.uml.typeCheck.enable` is off.
-            echo "script checked: ${checked}" > "$out/typecheck"
-            export UML_TEST_REPORT=$out/report.json
-            export UML_TEST_ARTIFACTS=$out/artifacts
-
-            # The shell writes the marker, not the runner: the runner can die
-            # before any Python of ours runs, and a missing marker would then
-            # be read as a pass. `tee` keeps `--print-build-logs` streaming;
-            # PIPESTATUS is the runner's exit code rather than tee's.
-            set +e
-            python3 ${script} --spec ${spec} 2>&1 | tee "$out/log"
-            status=''${PIPESTATUS[0]}
-            set -e
-            echo "$status" > "$out/status"
-          '';
-    in
-    /*
-      The check reads the marker and nothing else, and names the run's
-      output in the build log -- the one thing a failed build leaves.
-
-      The trap: a failed run is a *successful* build of `attempt`, so Nix
-      caches it.  Building the test again re-reads the marker and fails in
-      a second, booting nothing, until an input changes.
-    */
-    pkgs.runCommand "uml-test-${name}${suffix}"
-      {
-        passthru = passthru // {
-          inherit
-            attempt
-            spec
-            python
-            run
-            ;
-        };
-      }
-      ''
-        echo "the run is at ${attempt}"
-        echo "  log:       ${attempt}/log"
-        echo "  timings:   ${attempt}/report.json"
-        echo "  artifacts: ${attempt}/artifacts"
-
-        status=$(cat ${attempt}/status)
-        if [ "$status" != 0 ]; then
-          echo
-          echo "--- the last 50 lines of ${attempt}/log ---"
-          tail -n 50 ${attempt}/log
-          echo "--- end ---"
-          echo
-          echo "the test failed (exit $status); the paths above hold what it left" >&2
-          exit 1
-        fi
-
-        mkdir -p $out
-        ln -s ${attempt} $out/attempt
-        ln -s ${attempt}/log $out/log
-        ln -s ${attempt}/report.json $out/report.json
-        ln -s ${attempt}/artifacts $out/artifacts
-      '';
-
-  # nixos-test's shape, mapped onto mkSession; see nixos-test.nix.
-  fromNixosTest = import ./nixos-test.nix { inherit pkgs lib mkSession; };
+  # nixos-test's shape, mapped onto mkTest; see nixos-test.nix.
+  fromNixosTest = import ./nixos-test.nix { inherit pkgs lib mkTest; };
 
   /**
     A run: guests, and the phases that drive them.
 
-        mkSession {
+        mkTest {
           name = "mine";
           nodes.one = { };
           phases.check.script = ./check.py;
         }
 
-    `mkTest` is the older door and takes one script. This one takes a
-    module, so a recipe can contribute a phase, the guest configuration
-    that phase needs and the knobs it reads in a single import -- and a
-    consumer overrides any of it the way they override a NixOS option.
+    It takes a module, so a recipe can contribute a phase, the guest
+    configuration that phase needs and the knobs it reads in a single
+    import -- and a consumer overrides any of it the way they override a
+    NixOS option.
 
     One program, run several ways. The derivation itself is the
     sandboxed run, which CI builds, and these come with it:
@@ -594,7 +322,7 @@ rec {
     that does not exist is an evaluation error, since the alternative is
     a phase that quietly never gets skipped.
   */
-  mkSession =
+  mkTest =
     module:
     let
       run = lib.evalModules {
@@ -759,7 +487,7 @@ rec {
 
       extend =
         { modules }:
-        mkSession {
+        mkTest {
           imports = [ module ] ++ modules;
         };
       # Every guest on one backend, whatever its own configuration says.

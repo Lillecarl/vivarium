@@ -4,14 +4,14 @@ Read README.md first — it explains how the pieces fit together.
 
 ## One function
 
-`mkSession` is the function: guests plus named phases, ordered in Nix,
+`mkTest` is the function: guests plus named phases, ordered in Nix,
 with `.driver`, `.driverDebug` and `.driverInteractive` as the doors by
 hand. Every test here is one. `docs/design/runner.md` is the design and
 records what is decided and what is not.
 
 `fromNixosTest` (`nixos-test.nix`) maps a nixos-test spec onto it and is
-kept apart from it. `mkTest` is the old function, kept only until nixkube
-moves; do not use it or add to it.
+kept apart from it. The Python harness `uml_runner.run_test` served the
+old `mkTest`, and stays only until nixkube moves.
 
 The split underneath is the point. `pkgs/uml-runner` is the **mechanism**
 — guests, backends, the agent channel — and it has no opinion about

@@ -11,7 +11,7 @@ it. There is no `nix build` first and no store path to paste.
 **A separate package from `uml`, on purpose.** nanopynix links Nix, and
 `uml` is what every sandboxed check runs. A sandboxed check must not
 evaluate -- everything is decided by the time it runs -- so it never
-needs this, and a consumer of `mkSession` never builds it.
+needs this, and a consumer of `mkTest` never builds it.
 
 Evaluation is impure, as `nix build --file` is, so a knob reads the
 environment the same way here as there.

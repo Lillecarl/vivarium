@@ -71,20 +71,20 @@ class Machines(dict[str, Machine]):
     Declared in Nix and resolved there, so a knob can change what is
     *built* as well as what a phase does. Every declared name is present;
     one whose variable is unset carries its declared default, which is
-    what a sandboxed check always gets. Set by ``mkSession``; empty under
-    ``mkTest``, which has ``env`` instead."""
+    what a sandboxed check always gets. Set by ``mkTest``; empty under
+    the old ``run_test`` harness, which has ``env`` instead."""
 
     shared: dict[str, Any]
     """One phase's findings for a later phase of the same run.
 
     The phases are separate modules, so a value one computes -- a
     process census taken before the suites -- reaches the phase that
-    compares against it only through here. Set by ``mkSession``."""
+    compares against it only through here. Set by ``mkTest``."""
 
     phase: str | None
     """The phase running now. One script can serve several phases, told
-    apart by name: ``mkSession`` phases generated from one list in Nix.
-    ``None`` under ``mkTest``."""
+    apart by name: ``mkTest`` phases generated from one list in Nix.
+    ``None`` under the old ``run_test`` harness."""
 
     argv: list[str]
     """What was left on the command line after ``--spec``.

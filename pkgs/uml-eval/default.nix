@@ -5,8 +5,8 @@
 # `uml` and `uml_runner` together. `uml` and `uml-runner` are lifted into
 # that set from their own pyproject.toml, as easykubenix does for `ekn`.
 #
-# Nothing else in this repository depends on this. `mkSession`, `mkTest`
-# and every check use the nixpkgs build of `uml`, so a consumer never
+# Nothing else in this repository depends on this. `mkTest` and every
+# check use the nixpkgs build of `uml`, so a consumer never
 # builds nanopynix -- the sandboxed path must not evaluate anyway.
 {
   pkgs,

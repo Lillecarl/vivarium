@@ -8,9 +8,11 @@ The long record up to 2026-09-30 is `history/running-anywhere.md`.
 
 ## What a test is
 
-- **One Nix function.** `mkTest` and `mkSession` merge into one
-  function. Its option and output names follow nixos-test, so a NixOS
-  developer knows them already.
+- **One Nix function, `mkTest`.** The old `mkTest` and `mkSession`
+  merged into it, under the name a caller writes: a test. "Session"
+  names the running thing only (the `Session` class, MCP). Its option
+  and output names follow nixos-test, so a NixOS developer knows them
+  already.
 - **A test is a module:** guests under `nodes.<name>`, a `defaults`
   module every guest imports, and `phases`. Guests are declared one by
   one, so a caller changes one guest in Nix, not from Python at run time.
@@ -68,8 +70,8 @@ nixpkgs' simple-vm, systemd-no-tainted and oh-my-zsh sandboxed, and
 simple-container by hand (it needs `/dev/net/tun`).
 
 Built: the outputs below, `interactive`, and this repository's tests
-as sessions. `mkSession` is the one function; `mkTest` stays only
-until nixkube moves.
+as `mkTest`s; the old `mkTest` is gone. nixkube still calls the old
+shapes and moves next.
 
 Inputs, as module options:
 
@@ -223,5 +225,5 @@ a test.
 
 ## Order of work
 
-1. Move nixkube to `mkSession`, then remove `mkTest`.
+1. Rename the project (issue #18), then move nixkube to `mkTest`.
 2. The agent-experience items.

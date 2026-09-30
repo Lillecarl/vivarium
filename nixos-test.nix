@@ -1,6 +1,6 @@
 /**
   A nixos-test test, run by this runner: a literal mapping onto
-  `mkSession`, kept apart from it so the function itself never learns
+  `mkTest`, kept apart from it so the function itself never learns
   nixos-test's shape.
 
       fromNixosTest (pkgs.path + "/nixos/tests/simple-vm.nix")
@@ -25,7 +25,7 @@
 {
   pkgs,
   lib,
-  mkSession,
+  mkTest,
 }:
 test:
 let
@@ -136,7 +136,7 @@ let
   # The guests alone, for a `testScript` that is a function of them. Not
   # the final run: its phase would depend on its own guests.
   script =
-    if lib.isFunction t.testScript then t.testScript { inherit ((mkSession run)) nodes; } else t.testScript;
+    if lib.isFunction t.testScript then t.testScript { inherit ((mkTest run)) nodes; } else t.testScript;
 
   phase = pkgs.writeText "${t.name}-testScript.py" ''
     """nixos-test's testScript for ${t.name}; see uml_runner/nixos_test.py."""
@@ -154,7 +154,7 @@ in
 if t.enableOCR then
   throw "${t.name}: enableOCR asks for a screen, and nothing here reads one"
 else
-  mkSession {
+  mkTest {
     imports = [ run ];
     phases.test = {
       script = phase;

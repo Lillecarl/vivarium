@@ -247,7 +247,7 @@ let
     the backend -- what a failure skips, what a knob is worth, what
     `--only` leaves alone -- so one backend is enough.
 
-    UML, because `mkSession` defaults to it. That is why this waits on
+    UML, because `mkTest` defaults to it. That is why this waits on
     `kernel` although nothing in it is a kernel test.
   */
   sessionJob = job {
