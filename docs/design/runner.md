@@ -144,9 +144,9 @@ a test.
   run. The runner builds a view per guest: a tmpfs with one read-only
   bind per path, read-only as a whole through `mount_setattr`
   (`vivarium_runner/storeview.py`). The closure is the closureInfo the
-  guest's Nix database is loaded from (`umlNixRegistration`), so the
+  guest's Nix database is loaded from (`vivariumNixRegistration`), so the
   database lists exactly what the view holds. virtiofsd serves a QEMU
-  guest's view, and a UML guest's `/init` mounts it from `UML_STORE` on
+  guest's view, and a UML guest's `/init` mounts it from `VIVARIUM_STORE` on
   the kernel command line (`store-view`: all three backends, by hand
   and sandboxed; it fails with views off).
 - **A VM guest's store is writable through its own overlay**, inside its
@@ -230,33 +230,35 @@ a test.
   about 6 ms a path (510 paths in 3.0 s).
 - A GitHub runner and a stock Ubuntu builder.
 
+## The name
+
+The project is **vivarium** (issue #18; Carl, 2026-09-30). The umbrella
+is nixidae, and a vivarium is where it keeps its guests. The names that
+belong to the project changed. The names that belong to User-Mode Linux,
+the kernel, did not.
+
+| old | new |
+| --- | --- |
+| repository `user-mode-nixos`, source key | `vivarium` |
+| CLI `uml`, package `pkgs/uml`, module `uml` | `vivarium` |
+| `pkgs/uml-runner`, `uml_runner` | `pkgs/vivarium-runner`, `vivarium_runner` |
+| `pkgs/uml-eval`, `uml_eval`, `uml-eval` | `pkgs/vivarium-eval`, `vivarium_eval`, `vivarium-eval` |
+| MCP command `uml-mcp`, server `uml` | `vivarium-mcp`, `vivarium` |
+| options `boot.uml.*`, `uml.recipes.*` | `vivarium.*`, `vivarium.recipes.*` |
+| `services.uml-k8s`, its `uml-k8s-*` units and commands | `services.vivarium-k8s`, `vivarium-k8s-*` |
+| `UML_*` runner variables | `VIVARIUM_*` |
+| `uml-agent`, `uml-journal` units | `vivarium-agent`, `vivarium-journal` |
+| `system.build.umlRootImage`, `umlNixDatabase`, `umlNixRegistration`, `umlRunner`, `umlRunnerPackage` | `vivarium…` |
+| derivations `uml-session-*`, `uml-driver-*`, `uml-check-*`, `uml-test-*` | `vivarium-…` |
+
+Unchanged: the backend value `"uml"` and the `.uml` output,
+`pkgs/uml-kernel` and `umlKernel`, `pkgs/uml-passt-bridge` and
+`umlPasstBridge`, the UML `/init` (`uml-init`), and the kernel's
+`CONFIG_UML_*` symbols.
+
 ## Order of work
 
-1. Rename the project to **vivarium** (issue #18; Carl, 2026-09-30),
-   everywhere: repository, CLI, MCP server, Python packages, `UML_*`
-   variables and the `boot.uml.*` options. The umbrella is nixidae, and
-   a vivarium is where it keeps its guests. Rewrite the README so the
-   repository is easy to approach. Then move nixkube to `mkTest`.
-
-   The names that belong to the project change. The names that belong
-   to User-Mode Linux, the kernel, do not.
-
-   | old | new |
-   | --- | --- |
-   | repository `user-mode-nixos`, source key | `vivarium` |
-   | CLI `uml`, package `pkgs/uml`, module `uml` | `vivarium` |
-   | `pkgs/uml-runner`, `uml_runner` | `pkgs/vivarium-runner`, `vivarium_runner` |
-   | `pkgs/uml-eval`, `uml_eval`, `uml-eval` | `pkgs/vivarium-eval`, `vivarium_eval`, `vivarium-eval` |
-   | MCP command `uml-mcp`, server `uml` | `vivarium-mcp`, `vivarium` |
-   | options `boot.uml.*`, `uml.recipes.*` | `vivarium.*`, `vivarium.recipes.*` |
-   | `services.uml-k8s`, its `uml-k8s-*` units and commands | `services.vivarium-k8s`, `vivarium-k8s-*` |
-   | `UML_*` runner variables | `VIVARIUM_*` |
-   | `uml-agent`, `uml-journal` units | `vivarium-agent`, `vivarium-journal` |
-   | `system.build.umlRootImage`, `umlNixDatabase`, `umlNixRegistration`, `umlRunner`, `umlRunnerPackage` | `vivarium…` |
-   | derivations `uml-session-*`, `uml-driver-*`, `uml-check-*`, `uml-test-*` | `vivarium-…` |
-
-   Unchanged: the backend value `"uml"` and the `.uml` output,
-   `pkgs/uml-kernel` and `umlKernel`, `pkgs/uml-passt-bridge` and
-   `umlPasstBridge`, the UML `/init` (`uml-init`), and the kernel's
-   `CONFIG_UML_*` symbols.
+1. A run by hand with a QEMU guest checks that its namespace maps
+   subordinate ids, and fails at start if not. Without them the first
+   non-root write to `/artifacts` fails with EINVAL, minutes in.
 2. The agent-experience items.
