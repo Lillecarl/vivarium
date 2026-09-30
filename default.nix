@@ -380,40 +380,10 @@ let
           };
         };
       in
-      pkgs.runCommand "vivarium-check-phase-rules"
-        {
-          nativeBuildInputs = [ pkgs.jq ];
-          passthru.session = run;
-        }
-        ''
-          report=${run.attempt}/phases.json
-          echo "--- $report ---"
-          cat "$report"
-
-          want() {
-            got=$(jq -r --arg n "$1" '.phases[] | select(.name == $n) | .state' "$report")
-            if [ "$got" != "$2" ]; then
-              echo "phase $1 is '$got', expected '$2'" >&2
-              exit 1
-            fi
-            echo "ok: $1 is $2"
-          }
-
-          want boot passed
-          want cluster failed
-          # The rule. Skipped, not failed: nothing ran it.
-          want check skipped
-          # The other half of the rule, and the one nixpkgs cannot do.
-          want independent passed
-
-          if [ "$(jq -r '.passed' "$report")" != "false" ]; then
-            echo "a run holding a failure and a skip reported itself passed" >&2
-            exit 1
-          fi
-          echo "ok: the run failed, as a run with unanswered phases must"
-
-          touch $out
-        '';
+      pkgs.runCommand "vivarium-check-phase-rules" { passthru.session = run; } ''
+        ${pkgs.python3.interpreter} ${./tests/phase_rules.py} ${run.attempt}
+        touch $out
+      '';
 
     /*
       What is a run told from outside, and what is a check told instead?
