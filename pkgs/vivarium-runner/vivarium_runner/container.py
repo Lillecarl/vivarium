@@ -547,10 +547,27 @@ def _shares_userns(pid: int) -> bool:
     return os.readlink(f"/proc/{pid}/ns/user") == os.readlink("/proc/self/ns/user")
 
 
-def _init_pid(crun: list[str], name: str) -> int:
-    return json.loads(
-        subprocess.run([*crun, "state", name], capture_output=True, text=True, check=True).stdout
-    )["pid"]
+STATE_WAIT = 10.0
+"""Seconds for crun to record a container it has already sent a pty for."""
+
+
+def _init_pid(crun: list[str], name: str, proc: subprocess.Popen) -> int:
+    """The container's init, once crun has written down that it exists.
+
+    The two come from different processes in crun 1.29: the container's
+    init sends the pty (`container_init_setup`, `src/libcrun/container.c:1241`)
+    and the parent writes the state afterwards (`container.c:2807`). Asked
+    the moment the pty arrived, `state` failed for one of five containers
+    started together, and the guest was reported as never coming up.
+    """
+    deadline = time.monotonic() + STATE_WAIT
+    while True:
+        done = subprocess.run([*crun, "state", name], capture_output=True, text=True)
+        if done.returncode == 0:
+            return json.loads(done.stdout)["pid"]
+        if proc.poll() is not None or time.monotonic() > deadline:
+            raise RuntimeError(f"crun state {name} failed ({done.returncode}): {done.stderr.strip()}")
+        time.sleep(0.02)
 
 
 def _uplink(pid: int, log: Path, pasta: list[str]) -> subprocess.Popen:
@@ -793,7 +810,7 @@ def main(argv: list[str] | None = None) -> int:
             master = fds[0]
         if master is not None and (uplink or args.lan_fd is not None):
             try:
-                pid = _init_pid(crun, name)
+                pid = _init_pid(crun, name, proc)
                 if uplink:
                     helpers.append(_uplink(pid, Path(uplink[0]), uplink[1:]))
                 if args.lan_fd is not None:
