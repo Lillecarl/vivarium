@@ -8,9 +8,9 @@ The long record up to 2026-09-30 is `history/running-anywhere.md`.
 
 ## What a test is
 
-- **One entrypoint.** `mkTest` and `mkSession` merge into one. Its
-  option and output names follow nixos-test, so a NixOS developer knows
-  them already.
+- **One Nix function.** `mkTest` and `mkSession` merge into one
+  function. Its option and output names follow nixos-test, so a NixOS
+  developer knows them already.
 - **A test is a module:** guests under `nodes.<name>`, a `defaults`
   module every guest imports, and `phases`. Guests are declared one by
   one, so a caller changes one guest in Nix, not from Python at run time.
@@ -90,6 +90,23 @@ The long record up to 2026-09-30 is `history/running-anywhere.md`.
 5. **A size budget for MCP replies.** A failed nixkube case returned
    233k characters. Proposed: 16k a reply, 2k an event, the rest in a
    file the reply names.
+6. **Reusable modules go in `defaults`** (Carl's idea). Every guest
+   imports a reusable module through `defaults`, and the module brings
+   its own scripts. An option that must differ per guest has no default,
+   so each guest sets it or evaluation fails. Open: how a guest-level
+   NixOS module adds a script to the run. The run would collect it from
+   each guest's evaluated configuration.
+7. **Is a phase a systemd unit?** (Carl's idea.) Most work runs in the
+   guests under systemd. A control plane runs `kubeadm init` as soon as
+   it boots; a worker's unit waits until the control plane's unit has
+   passed. The host then waits and checks, and does not drive. Guests
+   must then ask each other about state: over a socket every guest can
+   reach, or through the runner, which already talks to each agent.
+   Conflict to settle: `modules/k8s.nix` opens with the rule that a node
+   knows only about itself, and the test handles what needs the other
+   nodes, so that "the same three lines describe a one-node cluster or a
+   five-node one". A worker that waits on a named control plane is a
+   reference to a peer, which that rule forbids.
 
 ## Not measured
 
