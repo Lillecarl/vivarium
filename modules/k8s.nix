@@ -899,7 +899,11 @@ in
     systemd.services.k8s-load-images = lib.mkIf (cfg.images == "nix") {
       description = "Import the kubeadm images into the container runtime";
       wantedBy = [ "multi-user.target" ];
-      requires = [ "uml-k8s-cri.target" ];
+      # Not `requires`, which would import again on every runtime restart:
+      # the images stay on disk, and under CRI-O `podman load` stages about
+      # 770M in /var/tmp. Measured on nixkube's node: free space fell to
+      # 99M, and kubelet held a DiskPressure taint for five minutes.
+      wants = [ "uml-k8s-cri.target" ];
       after = [ "uml-k8s-cri.target" ];
       before = [ "kubelet.service" ];
       path = [
