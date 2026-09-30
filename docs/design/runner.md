@@ -207,6 +207,12 @@ a test.
    writes, not for a retry to succeed: a worker's `kubeadm join` unit
    starts only when a join token file exists, and the runner writes that
    file through the agent once the control plane is ready.
+6. **Pausing a sandboxed run** (Carl, 2026-09-30: not worth it yet). A
+   sandboxed run has no way in, so the answer today is to keep a run by
+   hand close enough to a sandboxed one that its failures reproduce
+   there. Two routes for later: nanopynix's bindings could start a
+   build with an extra sandbox path for the control socket, or root
+   could enter the sandbox's namespaces.
 
 ## Decided, not built yet
 
