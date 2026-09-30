@@ -960,6 +960,23 @@ let
       };
     };
 
+    # Does a run leave nothing behind, however it ends? tests/cleanup.py.
+    cleanup =
+      let
+        run = mkSession {
+          name = "cleanup";
+          nodes.one = { };
+          phases.hold = {
+            script = ./tests/phases/hold.py;
+            after = [ "boot" ];
+          };
+        };
+      in
+      pkgs.runCommand "uml-check-cleanup" { passthru.session = run; } ''
+        ${pkgs.python3.interpreter} ${./tests/cleanup.py} ${lib.getExe session} ${run.spec} "$TMPDIR"
+        touch $out
+      '';
+
     /*
       One guest of each backend on one segment, reaching each other over
       IP by name. `mixed` and `container-lan` each prove one pair; this
