@@ -258,7 +258,5 @@ Unchanged: the backend value `"uml"` and the `.uml` output,
 
 ## Order of work
 
-1. A run by hand with a QEMU guest checks that its namespace maps
-   subordinate ids, and fails at start if not. Without them the first
-   non-root write to `/artifacts` fails with EINVAL, minutes in.
-2. The agent-experience items.
+1. The quiet monitor mode.
+2. The remaining agent-experience items.

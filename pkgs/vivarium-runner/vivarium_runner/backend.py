@@ -376,6 +376,16 @@ class Qemu:
     name = "qemu"
 
     def launch(self, machine, rundir: Path, agent_fd: int, lan_fd: int | None) -> Launch:
+        # virtiofsd serves a file as the guest user that made it, so a
+        # guest user outside the namespace's ids gets EINVAL on its first
+        # write to /artifacts, minutes in. Fail here instead.
+        if not container.owns_ids():
+            raise BackendError(
+                f"{machine.spec.name}: a QEMU guest needs {container.SUBORDINATE_IDS} ids "
+                "in the run's namespace, and it maps fewer\n"
+                "    fix: give your user subordinate ids in /etc/subuid and /etc/subgid, "
+                "with newuidmap and newgidmap installed; a Nix build asks for uid-range"
+            )
         helpers: list[subprocess.Popen] = []
         opened: list[int] = []
         try:
