@@ -231,7 +231,7 @@ class Session:
     def _console(self, machine: str, line: str) -> None:
         self.emit(Kind.CONSOLE, line, level=Level.CONSOLE, machine=machine)
 
-    def _command(self, machine: str, what: str, seconds: float) -> None:
+    def _command(self, machine: str, what: str, seconds: float, outcome: dict[str, Any]) -> None:
         self.emit(
             Kind.RPC,
             what,
@@ -239,6 +239,7 @@ class Session:
             machine=machine,
             seconds=seconds,
             phase=self.running.get(machine),
+            **outcome,
             **self._in_case(),
         )
 

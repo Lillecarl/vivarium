@@ -183,6 +183,16 @@ def _running(pid: int) -> bool:
     return stat.rpartition(")")[2].split()[0] not in ("Z", "X")
 
 
+OUTPUT_LIMIT = 2000
+"""How much of a command's output its event keeps: the end, where the
+error usually is. The whole output still reaches the caller."""
+
+
+def _command_outcome(result: tuple[int, str]) -> dict[str, Any]:
+    rc, out = result
+    return {"exit": rc, "output": out[-OUTPUT_LIMIT:]}
+
+
 class Machine:
     """Boots a guest and drives it, in the style of a NixOS test node."""
 
@@ -205,7 +215,7 @@ class Machine:
         recorder: report.Report | None = None,
         offline: bool = False,
         on_console: Callable[[str, str], None] | None = None,
-        on_command: Callable[[str, str, float], None] | None = None,
+        on_command: Callable[[str, str, float, dict[str, Any]], None] | None = None,
     ) -> None:
         self.spec = spec
         self.tools = tools
@@ -583,7 +593,13 @@ class Machine:
             raise MachineError(f"[{self.name}] agent is not connected")
         return self._conn.root
 
-    async def _ask(self, what: str, call, timeout: float):
+    async def _ask(
+        self,
+        what: str,
+        call,
+        timeout: float,
+        outcome: Callable[[Any], dict[str, Any]] | None = None,
+    ):
         """Await one agent call, turning silence into a real error.
 
         Every call goes through here.  A guest that has wedged or run out
@@ -593,27 +609,40 @@ class Machine:
 
         Every call is also timed here, for the same reason: this is the
         one place all of them pass through.  See report.py.
+
+        *outcome* turns the reply into what the command's event carries,
+        so a reader of `events.jsonl` sees how a command ended, not only
+        that it ran.
         """
         started = time.monotonic()
+        data: dict[str, Any] = {}
         try:
-            return await asyncio.wait_for(call, timeout=timeout)
+            result = await asyncio.wait_for(call, timeout=timeout)
+            if outcome is not None:
+                data = outcome(result)
+            return result
         except asyncio.TimeoutError:
+            data = {"error": "the guest stopped answering"}
             raise MachineError(
                 f"[{self.name}] guest stopped answering during: {what}\n"
                 f"{self._console_tail()}"
             ) from None
         except EOFError:
+            data = {"error": "the guest went away"}
             raise MachineError(
                 f"[{self.name}] guest went away during: {what}\n"
                 f"{self._console_tail()}"
             ) from None
+        except Exception as error:
+            data = {"error": f"{type(error).__name__}: {error}"[:OUTPUT_LIMIT]}
+            raise
         finally:
             took = time.monotonic() - started
             self.recorder.step(self.name, "rpc", what, took)
             if self.on_command is not None:
                 # The same choke point the timings use, so a new kind of
                 # call is reported without touching this.
-                self.on_command(self.name, what, took)
+                self.on_command(self.name, what, took, data)
 
     def _console_tail(self, lines: int = 15) -> str:
         """The last thing the guest said, for an error that has no other
@@ -646,6 +675,7 @@ class Machine:
             label or command,
             self._agent.run(command, timeout=timeout, env=env),
             timeout + 10,
+            outcome=_command_outcome,
         )
 
     async def succeed(

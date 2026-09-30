@@ -143,6 +143,10 @@ def render(event: Event) -> str:
         took = f" ({event.seconds:.2f}s)" if event.seconds else ""
         return f"[case] {outcome} {event.text}{took}"
     if event.kind is Kind.RPC and event.machine:
+        if error := event.data.get("error"):
+            return f"[{event.machine}] $ {event.text}  ({error})"
+        if (status := event.data.get("exit")) not in (None, 0):
+            return f"[{event.machine}] $ {event.text}  (exit {status})"
         return f"[{event.machine}] $ {event.text}"
     if event.kind is Kind.ERROR:
         return f"[error] {event.text}"

@@ -56,6 +56,14 @@ class TestRenderIsPure:
         line = render(event(Kind.RPC, "kubectl get nodes", machine="cp"))
         assert line == "[cp] $ kubectl get nodes"
 
+    def test_a_command_that_failed_says_how(self):
+        failed = event(Kind.RPC, "false", machine="cp", data={"exit": 1, "output": ""})
+        assert render(failed) == "[cp] $ false  (exit 1)"
+        passed = event(Kind.RPC, "true", machine="cp", data={"exit": 0, "output": ""})
+        assert render(passed) == "[cp] $ true"
+        lost = event(Kind.RPC, "sleep 9", machine="cp", data={"error": "the guest went away"})
+        assert render(lost) == "[cp] $ sleep 9  (the guest went away)"
+
     def test_anything_else_is_the_runner_talking(self):
         assert render(event(Kind.NOTE, "output in /tmp/x")) == "[vivarium] output in /tmp/x"
 
