@@ -1277,6 +1277,7 @@
 20 | a UML run in a view of its own closure | passes, passt nested | `uplink.view` |
 20 | what the guest sees, whole host store | 92699 entries, `hello` visible | `uplink.counted` |
 20 | what the guest sees, in the view | 510 entries, `hello` hidden | `uplink.countedView` |
+20 | two UML guests on `vec1`, user namespaces refused, passt a stub | ping each other both ways | `lan.stubBlocked` |
 20
 20 What follows from it:
 20
@@ -1311,7 +1312,7 @@
 20
 20 | level | needs | gives |
 20 | --- | --- | --- |
-20 | 0 | nothing | UML guests and the agent; no uplink; the whole host store (the LAN is not measured) |
+20 | 0 | nothing | UML guests, the agent and the LAN; no uplink; the whole host store |
 20 | 1 | a user namespace | passt uplink and forwards; a store view equal to the sandbox |
 20 | 2 | `/dev/kvm` | QEMU guests |
 20 | 3 | subordinate ids, a delegated cgroup | container guests |
