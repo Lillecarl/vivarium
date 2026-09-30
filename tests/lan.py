@@ -6,7 +6,7 @@ host can talk to each of them over the serial line, and that frames get
 between them on vec1.
 """
 
-from uml_runner import Machines
+from vivarium_runner import Machines
 
 
 async def test(vms: Machines) -> None:

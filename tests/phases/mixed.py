@@ -6,7 +6,7 @@ That is the proof the run holds both kinds, and not two of one. Not
 `uname -m`, which a UML guest answers `x86_64`, like the host.
 """
 
-from uml_runner import Machines
+from vivarium_runner import Machines
 
 
 async def test(vms: Machines) -> None:

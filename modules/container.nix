@@ -2,7 +2,7 @@
 #
 # No kernel and no disk: the runner starts this system's init under crun,
 # as the user who started the run, with an overlay over the host's
-# /nix/store. See uml_runner/container.py and Area 8 of
+# /nix/store. See vivarium_runner/container.py and Area 8 of
 # docs/design/history/running-anywhere.md.
 {
   config,
@@ -24,7 +24,7 @@ lib.mkIf (cfg.backend == "container") {
   boot.uml.agentDevice = "unix:/run/host/agent/sock";
 
   # A Nix build's seccomp filter refuses setuid bits, and the runner says
-  # so with a file (uml_runner.container.NO_SETUID). Skipped rather than
+  # so with a file (vivarium_runner.container.NO_SETUID). Skipped rather than
   # failed: without it every sandboxed boot is "degraded". By hand the
   # file is absent and the wrappers are made as usual.
   systemd.services.suid-sgid-wrappers.unitConfig.ConditionPathExists = "!/run/host/agent/no-setuid";

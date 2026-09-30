@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Drive `uml-mcp` the way Claude Code does: JSON-RPC over its stdio.
+"""Drive `vivarium-mcp` the way Claude Code does: JSON-RPC over its stdio.
 
 Raw, not the SDK's client: the SDK validates each incoming notification
 against the methods it knows, and `notifications/claude/channel` is a
 Claude Code extension. What this reads is what Claude Code reads.
 
-    mcp_driver.py <uml-mcp> <spec of a run that fails a phase>
+    mcp_driver.py <vivarium-mcp> <spec of a run that fails a phase>
 """
 
 import asyncio
@@ -33,7 +33,7 @@ class Client:
         assert self.process.stdout is not None
         line = await self.process.stdout.readline()
         if not line:
-            raise RuntimeError("uml-mcp closed its stdout")
+            raise RuntimeError("vivarium-mcp closed its stdout")
         message = json.loads(line)
         if message.get("method") == CHANNEL:
             self.channel.append(message["params"])

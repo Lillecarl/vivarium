@@ -1,0 +1,17 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "vivarium-eval"
+version = "0.1.0"
+description = "Name a run; it is evaluated, built and run, with no nix build first"
+requires-python = ">=3.12"
+dependencies = ["anyio", "mcp", "nanopynix", "vivarium"]
+
+[project.scripts]
+vivarium-eval = "vivarium_eval.cli:main"
+vivarium-mcp = "vivarium_eval.server:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["vivarium_eval"]

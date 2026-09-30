@@ -7,7 +7,7 @@ already running, and prints the summary lines.
 
 import json
 
-from uml_runner import Machine, Machines
+from vivarium_runner import Machine, Machines
 
 DURATION = 5
 

@@ -16,7 +16,7 @@
   - `virtualisation.memorySize` and `.cores` become `boot.uml.memory`
     and `.cpus`.
   - `testScript` becomes one phase after `boot`, run through
-    `uml_runner.nixos_test`, which gives it nixos-test's API.
+    `vivarium_runner.nixos_test`, which gives it nixos-test's API.
 
   Anything else nixos-test takes (`meta`, `sshBackdoor`, ...) is
   accepted and not used. `enableOCR` is refused: nothing here reads a
@@ -139,10 +139,10 @@ let
     if lib.isFunction t.testScript then t.testScript { inherit ((mkTest run)) nodes; } else t.testScript;
 
   phase = pkgs.writeText "${t.name}-testScript.py" ''
-    """nixos-test's testScript for ${t.name}; see uml_runner/nixos_test.py."""
+    """nixos-test's testScript for ${t.name}; see vivarium_runner/nixos_test.py."""
 
-    from uml_runner import Machines
-    from uml_runner.nixos_test import run
+    from vivarium_runner import Machines
+    from vivarium_runner.nixos_test import run
 
     SCRIPT = ${builtins.toJSON script}
 

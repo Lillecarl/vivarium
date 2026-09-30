@@ -10,17 +10,17 @@ hand. Every test here is one. `docs/design/runner.md` is the design and
 records what is decided and what is not.
 
 `fromNixosTest` (`nixos-test.nix`) maps a nixos-test spec onto it and is
-kept apart from it. The Python harness `uml_runner.run_test` served the
+kept apart from it. The Python harness `vivarium_runner.run_test` served the
 old `mkTest`, and stays only until nixkube moves.
 
-The split underneath is the point. `pkgs/uml-runner` is the **mechanism**
+The split underneath is the point. `pkgs/vivarium-runner` is the **mechanism**
 — guests, backends, the agent channel — and it has no opinion about
-sequence. `pkgs/uml` owns the **sequence**: a `Session` something drives
-a step at a time, and `uml run` is one linear drive of it. An MCP server
+sequence. `pkgs/vivarium` owns the **sequence**: a `Session` something drives
+a step at a time, and `vivarium run` is one linear drive of it. An MCP server
 will be the same object driven slowly, which is why teardown is never
 automatic and why nothing per-run may be a module global.
 
-Logic goes in `pkgs/uml/uml/phases.py` as pure functions and is tested
+Logic goes in `pkgs/vivarium/vivarium/phases.py` as pure functions and is tested
 without a guest. Effects go in `session.py`. A guest test is for what a
 pure test cannot see — and it has already earned that: the phase-skip
 rule was correct in `phases.py` while the driver ignored its answer, and
@@ -29,20 +29,20 @@ only `nix build --file . phase-rules` caught it.
 ## Running a session by name
 
 ```sh
-nix run --file . uml-eval -- run pytest-phase --out ./out -- -k hostname
-nix run --file . uml-eval -- phases recipes
+nix run --file . vivarium-eval -- run pytest-phase --out ./out -- -k hostname
+nix run --file . vivarium-eval -- phases recipes
 ```
 
-`uml-eval` evaluates with nanopynix, builds the attribute's `.driver` (so
-the phase type check runs) and hands the spec to `uml run`. A check that
-wraps a session carries it as `.session`, and `uml-eval` steps into it,
+`vivarium-eval` evaluates with nanopynix, builds the attribute's `.driver` (so
+the phase type check runs) and hands the spec to `vivarium run`. A check that
+wraps a session carries it as `.session`, and `vivarium-eval` steps into it,
 so the check's name works. Evaluation is impure, like `nix build
 --file`, so a knob reads the environment.
 
-It is its own package on nanopynix's Python set (`pkgs/uml-eval`), and
+It is its own package on nanopynix's Python set (`pkgs/vivarium-eval`), and
 nothing a consumer uses depends on it: the sandboxed check never
 evaluates. Not a CI check yet, because CI would have to build nanopynix.
-Its unit tests are `nix build --file . uml-eval.tests`.
+Its unit tests are `nix build --file . vivarium-eval.tests`.
 
 ## Reaching into a paused run
 
@@ -72,7 +72,7 @@ loaded from its tests directory when it ends; pytest's importlib mode
 would otherwise hand the next run the old module. Every
 operation and its output is an event. The socket is `<out>/control.sock`,
 mode 0600, and exists only when a breakpoint was asked for.
-`uml/control.py` is the whole of it; `nix build --file . breakpoint`
+`vivarium/control.py` is the whole of it; `nix build --file . breakpoint`
 drives it against a guest.
 
 ## Iterating on a kernel
@@ -108,7 +108,7 @@ the kernel's status.
 
 ## The MCP server
 
-`.mcp.json` registers `uml-mcp` as `uml`. Its tools are `start`,
+`.mcp.json` registers `vivarium-mcp` as `uml`. Its tools are `start`,
 `state`, `exec`, `inject`, `run_pytest`, `run_phase`, `resume`, `stop`,
 `events` and `runs`. A run started by `start` is a child process with
 `--break-on-failure`, never the server itself: MCP's stdio is the
@@ -122,13 +122,13 @@ only when started from this directory with:
 claude --dangerously-load-development-channels server:uml
 ```
 
-Without the flag the tools still work, and `uml monitor` carries the
+Without the flag the tools still work, and `vivarium monitor` carries the
 same events. `start` returns it as `monitor`, a command line: run that
 in Claude Code's Monitor tool. Each run has `<out>/monitor.sock`, served
-by the `uml-mcp` that started it; `uml monitor <out|run id>` replays the
+by the `vivarium-mcp` that started it; `vivarium monitor <out|run id>` replays the
 run's events so far, prints each one as one line (`--json` for JSONL)
 and exits with the verdict: 0 passed, 1 failed, 2 exited without one,
-3 the stream ended first. `uml/monitor.py` is the client. `nix build
+3 the stream ended first. `vivarium/monitor.py` is the client. `nix build
 --file . mcp-check` drives the server over raw JSON-RPC against a guest,
 and checks a monitor prints exactly the channel's events.
 
@@ -173,7 +173,7 @@ and a failed phase replays the last 20 lines of every guest by itself.
 ## Where a test script belongs
 
 This repository is a library: `mkTest`, the guest modules, and
-`uml.runner` (the `uml_runner` package, `py.typed`). A test script belongs
+`uml.runner` (the `vivarium_runner` package, `py.typed`). A test script belongs
 in the project it tests.
 
     let uml = import (sources.user-mode-nixos + "/lib.nix") { inherit pkgs; };
@@ -182,7 +182,7 @@ in the project it tests.
 `tests/` here is for this repository's own facilities — segment,
 forwards, store, `/artifacts`. Do not add another project's script to it.
 
-A helper a second script wants belongs in `uml_runner` — waiting on a
+A helper a second script wants belongs in `vivarium_runner` — waiting on a
 unit, reading a journal, asking systemd what failed. A consumer copying
 one out of `tests/` means it should be a method on `Machine`.
 
@@ -190,7 +190,7 @@ one out of `tests/` means it should be a method on `Machine`.
 uml.typeCheck { name = "mine"; scripts = [ ./tests/uml/run.py ]; }
 ```
 
-pyright against `uml_runner` in a derivation. **Annotate the parameter** —
+pyright against `vivarium_runner` in a derivation. **Annotate the parameter** —
 `async def test(vms: Machines) -> None`. Unannotated, `vms` is Unknown and
 nothing done to it is checked: measured, `await vms.node.succeed(123)` and
 a call to a nonexistent method both passed. `reportMissingParameterType`
@@ -206,9 +206,9 @@ Each guest is a fixture named after it, `vms` is all of them, and a test
 or fixture may be `async def` and await `Machine` directly. pytest runs
 in a worker thread; async code is sent back to the session's loop through
 a portal, because a `Machine` only works on the loop that started it.
-`uml run ... -- -k name` selects. Each test is a `case` event and a JUnit
+`vivarium run ... -- -k name` selects. Each test is a `case` event and a JUnit
 case, and every command and journal entry carries `data.case`.
-`uml/pytest_plugin.py` is the whole of it; `nix build --file .
+`vivarium/pytest_plugin.py` is the whole of it; `nix build --file .
 pytest-phase` proves it against a guest.
 
 An async generator fixture's setup and teardown are two separate portal
@@ -246,7 +246,7 @@ nothing runs one phase at a time.
   reentrant, and `--capture=sys` swaps the process's stdout.
 - A breakpoint or a failure stops new phases, and the pause starts when
   the running ones end. Paused means nothing runs.
-- `uml run --serial` runs one at a time in Nix's order.
+- `vivarium run --serial` runs one at a time in Nix's order.
 
 Logic in `phases.ready`/`launchable`; the loop in `cli._schedule`. `nix
 build --file . parallel` proves the overlap, the negative control and
@@ -264,7 +264,7 @@ file and before building.
 `boot.uml.backend` is `uml` or `qemu`, and `mkTest` takes it. A test
 script never knows which it got, and neither does a node configuration --
 keep it that way. Anything that has to differ belongs in
-`modules/qemu.nix` or in `uml_runner/backend.py`, not in a test.
+`modules/qemu.nix` or in `vivarium_runner/backend.py`, not in a test.
 
 Every test carries `.uml` and `.qemu`, so do not add a second attribute
 to run a test on the other backend. `mkTest` builds both variants from
@@ -314,7 +314,7 @@ session with a container guest depends on the one it needs (`probeFor`:
 `-tun` when a container has a LAN); CI builds it first on its own. Where its own cgroup is not writable, the
 runner starts the launcher under `systemd-run --user --scope -p
 Delegate=yes` (`container.scope()`), which execs in place and so keeps
-the parent-death signal. Plain `uml-eval run container` and MCP `start`
+the parent-death signal. Plain `vivarium-eval run container` and MCP `start`
 both work.
 
 - `modules/container.nix`: `boot.isContainer`, a root template directory
@@ -324,7 +324,7 @@ both work.
 - LAN: `crun_launch tap` joins the guest's user and net namespaces (a
   process of its own: setns into a userns needs one thread), makes
   `vec1` and copies frames to the segment fd. `nix build`-free proof:
-  `uml-eval run container-lan` (two containers and a UML guest, jumbo
+  `vivarium-eval run container-lan` (two containers and a UML guest, jumbo
   frames unfragmented).
 - Uplink: the launcher starts pasta on the init's pid once crun has one,
   as `vec0` with passt's arguments; `_pasta_forwards` turns off what pasta
@@ -332,7 +332,7 @@ both work.
   user namespace it gets no uevents and networkd waited on it for ever.
 - The agent listens on `unix:/run/host/agent/sock`; `Launch.agent_path`
   makes `Machine` connect after the ready line.
-- `uml_runner.crun_launch` relays the pty crun hands over the console
+- `vivarium_runner.crun_launch` relays the pty crun hands over the console
   socket; crun will not write it to a pipe. EIO on the master is systemd
   re-opening the console, not the end.
 - Lifetime chain: runner → (systemd-run, exec'd in place) launcher →
@@ -410,7 +410,7 @@ jq '.by_command[:5]' result/report.json
 A `wait` step *contains* the `rpc` steps inside it -- a poll loop is many
 round trips and the sleeps between them. Do not sum the two kinds.
 
-`uml_runner/report.py` is the whole of it. `Machine._ask` is the one
+`vivarium_runner/report.py` is the whole of it. `Machine._ask` is the one
 choke point every guest round trip passes through, so a new command type
 is timed without touching it.
 
@@ -436,7 +436,7 @@ arguments and has no control socket. `auto` mode is pasta-only. If you
 find yourself designing something that watches the guest and adds a
 forward, it ends in restarting passt and dropping every connection.
 
-The specs are built in `pkgs/uml-runner/uml_runner/forward.py`. Two
+The specs are built in `pkgs/vivarium-runner/vivarium_runner/forward.py`. Two
 things there are load-bearing and non-obvious:
 
 - A spec of *only* exclusions (`127.0.0.2/~32768-60999`) is what puts
@@ -451,7 +451,7 @@ To see what a rule turns into without booting anything:
 ```sh
 nix shell nixpkgs#python3 --command python3 -c '
 import importlib.util, sys
-s = importlib.util.spec_from_file_location("f", "pkgs/uml-runner/uml_runner/forward.py")
+s = importlib.util.spec_from_file_location("f", "pkgs/vivarium-runner/vivarium_runner/forward.py")
 f = importlib.util.module_from_spec(s); sys.modules["f"] = f; s.loader.exec_module(f)
 print(f.to_args([f.Rule(address="127.0.0.2")], start=1024))'
 ```

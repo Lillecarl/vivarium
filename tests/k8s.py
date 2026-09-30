@@ -3,7 +3,7 @@
 
 The nodes themselves know nothing about each other -- see modules/k8s.nix
 -- and everything that needs the whole cluster in view is in
-`uml_runner.cluster`, which any test can call:
+`vivarium_runner.cluster`, which any test can call:
 
     init      kubeadm init on cp, and kubeadm join on the two workers
     network   read each node's podCIDR, write its CNI config, and route
@@ -19,8 +19,8 @@ Then storage, which is the other thing a chart assumes a cluster has: a
 claim with no class named, bound to a node's own directory.
 """
 
-from uml_runner import Machine, Machines
-from uml_runner.cluster import (
+from vivarium_runner import Machine, Machines
+from vivarium_runner.cluster import (
     READY_TIMEOUT,
     bring_up,
     kubectl,

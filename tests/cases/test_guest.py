@@ -4,7 +4,7 @@ import asyncio
 import json
 
 import pytest
-from uml_runner import Machine, Machines
+from vivarium_runner import Machine, Machines
 
 
 async def test_hostname(one: Machine) -> None:

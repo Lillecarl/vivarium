@@ -1,6 +1,6 @@
 """Does a run leave nothing behind, however it ends?
 
-Each case starts `uml run` on one UML guest, signals the runner once a
+Each case starts `vivarium run` on one UML guest, signals the runner once a
 phase has started, and looks for what is left: a run root, or a process
 by its exact name. SIGKILL: the cleaner removes the root. SIGTERM: the
 run exits 143 after the guest has powered itself off.

@@ -5,7 +5,7 @@ import asyncio
 import json
 from pathlib import Path
 
-from uml_runner import Machines
+from vivarium_runner import Machines
 
 MARK = "streamed-before-the-crash"
 

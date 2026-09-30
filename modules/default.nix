@@ -6,7 +6,7 @@
 #
 #   default.nix  the boot.uml options and the packages a guest needs
 #   guest.nix    what the guest system itself looks like
-#   image.nix    the root image, /init, and the run-uml wrapper
+#   image.nix    the root image, /init, and the vivarium-run wrapper
 {
   config,
   lib,
@@ -420,7 +420,7 @@ in
         default = [ ];
         example = lib.literalExpression "[ pkgs.python3Packages.kubernetes ]";
         description = ''
-          Python packages the script imports beyond `uml_runner`.
+          Python packages the script imports beyond `vivarium_runner`.
 
           Without them pyright reports the import as an error, which is
           the right answer: an import it cannot resolve is a name it
@@ -518,7 +518,7 @@ in
     # The UML kernel is built from the same source as the guest's own
     # kernel package, so the two always agree on module versions.
     system.build = {
-      umlRunnerPackage = pkgs.callPackage ../pkgs/uml-runner { };
+      umlRunnerPackage = pkgs.callPackage ../pkgs/vivarium-runner { };
 
       /*
         What the guest tells Nix about the store it can see -- see

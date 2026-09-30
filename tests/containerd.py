@@ -24,7 +24,7 @@ import asyncio
 import json
 import re
 
-from uml_runner import Machine, MachineError, Machines
+from vivarium_runner import Machine, MachineError, Machines
 
 # Host network, so a sandbox needs no CNI: NamespaceMode.NODE is 2 in the
 # CRI API.  This test is not about networking.

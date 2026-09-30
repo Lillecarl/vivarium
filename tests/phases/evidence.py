@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Collect something from the guest, whatever failed before this ran."""
 
-from uml_runner import Machines
+from vivarium_runner import Machines
 
 
 async def test(vms: Machines) -> None:

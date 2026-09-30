@@ -6,7 +6,7 @@ long enough to overlap when they run at once. The check reads the
 overlap, and the phase each marker was filed under, from events.jsonl.
 """
 
-from uml_runner import Machines
+from vivarium_runner import Machines
 
 EXPECTED = {"left": ["a"], "right": ["b"], "both": ["a", "b"]}
 

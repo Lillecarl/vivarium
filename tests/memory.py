@@ -18,7 +18,7 @@ and `host_memory_kib()` is one number either way.
 
 import asyncio
 
-from uml_runner import Machine, Machines
+from vivarium_runner import Machine, Machines
 
 #: What the guest reads: every distinct file of its own system closure.
 #: Measured at 362 MiB over 16002 files, and 17 seconds for the run.

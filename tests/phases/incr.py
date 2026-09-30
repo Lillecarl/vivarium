@@ -12,7 +12,7 @@ the host reads at the same moment.
 import asyncio
 from pathlib import Path
 
-from uml_runner import Machine, Machines
+from vivarium_runner import Machine, Machines
 
 
 async def sizes(vm: Machine, host_path: Path) -> tuple[int, int]:

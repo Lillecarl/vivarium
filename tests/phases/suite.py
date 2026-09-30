@@ -6,7 +6,7 @@ for a test runner inside the guest: it writes JUnit to /artifacts/junit,
 which the session reads back as cases when the phase ends.
 """
 
-from uml_runner import Machines
+from vivarium_runner import Machines
 
 JUNIT = """<testsuites><testsuite name="inner">
 <testcase classname="inner.test_a" name="test_ok" time="0.5"/>

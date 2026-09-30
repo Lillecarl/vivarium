@@ -18,8 +18,8 @@ has no network, so there is nothing to pull from:
     nix run --file . k8s-pull.driver     # and k8s-pull.uml.driver
 """
 
-from uml_runner import Machines
-from uml_runner.cluster import KUBE_DNS, KUBE_PROXY, bring_up, kubectl, until
+from vivarium_runner import Machines
+from vivarium_runner.cluster import KUBE_DNS, KUBE_PROXY, bring_up, kubectl, until
 
 # Nothing built it, nothing imported it, and it is not in the guest's Nix
 # store: the only way this pod runs is a pull over the network.

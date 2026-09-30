@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """The guest is up and answers. Everything after this depends on it."""
 
-from uml_runner import Machines
+from vivarium_runner import Machines
 
 
 async def test(vms: Machines) -> None:

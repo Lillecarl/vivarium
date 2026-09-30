@@ -8,7 +8,7 @@ on the same value with no special case -- and CI cannot accidentally run
 something other than the check because a variable was exported.
 """
 
-from uml_runner import Machines
+from vivarium_runner import Machines
 
 DEFAULT = "every-case"
 """Declared in default.nix. What the sandbox must see."""

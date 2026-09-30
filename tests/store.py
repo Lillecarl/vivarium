@@ -19,7 +19,7 @@ import json
 import os
 import subprocess
 
-from uml_runner import Machines
+from vivarium_runner import Machines
 
 # The same view of the host's store that the guest gets, used here to pick
 # a path that view actually has.

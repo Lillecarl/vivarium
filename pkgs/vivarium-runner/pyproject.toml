@@ -1,0 +1,21 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "vivarium-runner"
+version = "0.2.0"
+description = "Run NixOS systems under User-Mode Linux and drive them from Python"
+requires-python = ">=3.10"
+dependencies = ["rpyc", "qemu.qmp"]
+
+[project.scripts]
+vivarium-run = "vivarium_runner.cli:main"
+uml-agent = "vivarium_runner.agent:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["vivarium_runner"]
+
+# PEP 561: the annotations have to survive the install, or a consumer's
+# pyright reads every `vms.node` as Unknown.
+artifacts = ["vivarium_runner/py.typed"]

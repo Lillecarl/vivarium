@@ -5,7 +5,7 @@ others over IP by hostname.
 come from the /etc/hosts every guest builds from its peers.
 """
 
-from uml_runner import Machines
+from vivarium_runner import Machines
 
 KINDS = {"u": "uml", "q": "kvm", "c": "container-other"}
 

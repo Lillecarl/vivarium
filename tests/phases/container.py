@@ -14,8 +14,8 @@ skipped, so a sandboxed pass never reads as a full one.
 import socket
 from pathlib import Path
 
-from uml_runner import Machine, Machines
-from uml_runner.container import store_is_one_mount, tap_fails
+from vivarium_runner import Machine, Machines
+from vivarium_runner.container import store_is_one_mount, tap_fails
 
 
 async def test(vms: Machines) -> None:

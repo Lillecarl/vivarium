@@ -128,10 +128,10 @@ lib.mkIf (cfg.backend == "uml") {
 
   # `nix run` this to get one guest with everything already pointed at it.
   system.build.umlRunner = pkgs.writeShellApplication {
-    name = "run-uml";
+    name = "vivarium-run";
     runtimeInputs = [ build.umlRunnerPackage ];
     text = ''
-      exec run-uml \
+      exec vivarium-run \
         --kernel ${build.umlKernel}/linux \
         --root-image ${build.umlRootImage} \
         --bridge ${lib.getExe build.umlPasstBridge} \

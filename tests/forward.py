@@ -22,8 +22,8 @@ import asyncio
 import urllib.error
 import urllib.request
 
-from uml_runner import Machine, Machines
-from uml_runner.forward import ephemeral_range
+from vivarium_runner import Machine, Machines
+from vivarium_runner.forward import ephemeral_range
 
 PAGE = "hello-from-inside-the-guest"
 DOC_ROOT = "/tmp/www"

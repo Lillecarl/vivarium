@@ -612,7 +612,7 @@ in
         lines per second.
 
         Keep this in step with `bring_up`'s `addons` argument in
-        `uml_runner.cluster`. Waiting for a pod kubeadm was told not to
+        `vivarium_runner.cluster`. Waiting for a pod kubeadm was told not to
         create hangs until the deadline; not waiting for one that does exist
         lets a test run before cluster DNS answers.
       '';

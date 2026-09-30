@@ -14,7 +14,7 @@ smallest real one to hand.  What is being asked is whether the kernel
 answers at all.
 """
 
-from uml_runner import Machines
+from vivarium_runner import Machines
 
 
 async def test(vms: Machines) -> None:

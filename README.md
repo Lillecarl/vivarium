@@ -46,7 +46,7 @@ mkTest {
 ```
 
 ```python
-from uml_runner import Machines
+from vivarium_runner import Machines
 
 async def test(vms: Machines) -> None:
     await vms.one.succeed("systemctl is-system-running --wait")
@@ -246,7 +246,7 @@ Machines naming the same `boot.uml.lan.network` are wired together on
 script gets them by name:
 
 ```python
-from uml_runner import run_test
+from vivarium_runner import run_test
 
 async def test(vms):
     await vms.server.succeed(f"ping -c2 {vms.client.ip}")
@@ -282,7 +282,7 @@ socket to its segment on `vec1`, and a socketpair to the host runner on
 `ssl0`.
 
 **Control channel.** The host drives guests over `ssl0`, not ssh, so
-commands work before networking exists and inside a sandbox. `uml_runner.arpyc`
+commands work before networking exists and inside a sandbox. `vivarium_runner.arpyc`
 speaks rpyc's wire format (brine for values, vinegar for exceptions) over
 asyncio, with one handler that calls a method by name — so `await
 vm.succeed("...")` is a single round trip. The guest half is the
@@ -370,7 +370,7 @@ Two things to know:
   requested port before spawning passt so the error names the guest and the
   port, rather than passt exiting with a bare `Address already in use`.
 
-`run-uml` with no `--command` polls the guest for what it is listening on and
+`vivarium-run` with no `--command` polls the guest for what it is listening on and
 prints where each port answers, so a service you start inside is followed by
 the address to reach it at — or by `not forwarded`, which is the answer worth
 having, since it needs a reboot to fix.
@@ -759,7 +759,7 @@ flake.nix               mkNode, mkTest, the tests and the demo guest
 ci/                     the GitHub Actions workflows, as Nix
 modules/default.nix     the boot.uml options
 modules/guest.nix       what a guest system looks like, either backend
-modules/image.nix       UML: the root image, /init, and the run-uml wrapper
+modules/image.nix       UML: the root image, /init, and the vivarium-run wrapper
 modules/qemu.nix        QEMU: the initrd, the virtiofs store, the MACs
 modules/store.nix       the host's whole store as a store the guest builds into
 modules/iperf3.nix      an example service module
@@ -767,7 +767,7 @@ modules/k8s.nix         a kubeadm node: containerd, kubelet, images
 modules/k8s-images.nix  the images kubeadm expects, built from nixpkgs
 pkgs/uml-kernel         the UML kernel, built from the guest's own source
 pkgs/uml-passt-bridge   fd plumbing between UML, passt and the host
-pkgs/uml-runner         the host runner, test harness, and guest agent
+pkgs/vivarium-runner         the host runner, test harness, and guest agent
   backend.py            what to exec for a guest, per backend
   report.py             where a run spent its time
 tests/                  one file per test

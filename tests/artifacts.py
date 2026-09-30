@@ -9,7 +9,7 @@ reads on the host, with nothing in between.
 Two guests, because each one must get its own directory.
 """
 
-from uml_runner import Machines
+from vivarium_runner import Machines
 
 BLOB = 1 << 20
 """A megabyte: hostfs and virtiofs are different code paths for a write

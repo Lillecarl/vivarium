@@ -174,7 +174,7 @@ in
                           "not slow"
                         ];
                         description = ''
-                          Given to pytest. `uml run ... -- <args>` adds to
+                          Given to pytest. `vivarium run ... -- <args>` adds to
                           these by hand; a knob adds to them in a check.
                         '';
                       };
@@ -240,7 +240,7 @@ in
               description = mkOption {
                 type = types.str;
                 default = name;
-                description = "One line, for `uml phases` and the report.";
+                description = "One line, for `vivarium phases` and the report.";
               };
             };
           }

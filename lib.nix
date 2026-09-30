@@ -22,7 +22,7 @@ rec {
 
         python3.withPackages (_: [ uml.runner ])
   */
-  runner = pkgs.callPackage ./pkgs/uml-runner { };
+  runner = pkgs.callPackage ./pkgs/vivarium-runner { };
 
   /**
     The session, and the `uml` CLI that drives one.
@@ -30,7 +30,7 @@ rec {
     The redesign lives here; `runner` above is the mechanism it uses and
     is not going away. See `docs/design/history/running-anywhere.md`.
   */
-  session = pkgs.callPackage ./pkgs/uml { uml-runner = runner; };
+  session = pkgs.callPackage ./pkgs/vivarium { vivarium-runner = runner; };
 
   /*
     pyright over a caller's test scripts, against this library.
@@ -113,7 +113,7 @@ rec {
         export HOME=$TMPDIR
         pyright --pythonpath ${python}/bin/python --outputjson scripts > report.json || {
           cat report.json
-          echo "the scripts above do not type check against uml_runner" >&2
+          echo "the scripts above do not type check against vivarium_runner" >&2
           exit 1
         }
         cp report.json $out
@@ -205,7 +205,7 @@ rec {
   /**
     Whether this sandbox can run a container guest, answered in seconds.
 
-    The runner's own host checks (`uml_runner.container.probe`), in a
+    The runner's own host checks (`vivarium_runner.container.probe`), in a
     derivation that asks for what a container session asks for. A missing
     piece fails here, named with its fix, rather than as a guest that does
     not boot minutes into a run. Every session with a container guest
@@ -225,7 +225,7 @@ rec {
       }
       ''
         set -o pipefail
-        python -m uml_runner.crun_launch probe ${lib.optionalString tun "--tun"} | tee $out
+        python -m vivarium_runner.crun_launch probe ${lib.optionalString tun "--tun"} | tee $out
       '';
 
   # The probe a set of machines needs, or null when none is a container.
@@ -404,7 +404,7 @@ rec {
             unshare = "${lib.getBin pkgs.util-linux}/bin/unshare";
             # The runner that knows every field below. No cycle: the
             # package does not depend on any spec.
-            uml = "${session}";
+            vivarium = "${session}";
             pythonPath = map (path: "${path}") checkedConfig.pythonPath;
             knobs = checkedConfig.resolved;
             phases = map (
@@ -479,7 +479,7 @@ rec {
       # The same, paused on the first failure with the guests up. The MCP
       # server starts this one.
       driverDebug = wrap "uml-driver-debug-${name}" "run" "--break-on-failure";
-      # nixos-test's REPL: paused before the first phase; see uml/repl.py.
+      # nixos-test's REPL: paused before the first phase; see vivarium/repl.py.
       # `.driverInteractive` is this, from the run with `interactive`
       # merged in.
       driverInteractiveHere = wrap "uml-driver-interactive-${name}" "run" "--interactive";
@@ -502,7 +502,7 @@ rec {
         happened to `status`; the check below fails, and reads nothing but
         that file.
 
-        The same `uml run` the developer gets, with `--out` pointed at the
+        The same `vivarium run` the developer gets, with `--out` pointed at the
         derivation's own output. Nothing branches on being in a sandbox,
         which is what stops the two drifting.
       */

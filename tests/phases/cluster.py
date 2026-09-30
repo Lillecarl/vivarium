@@ -6,7 +6,7 @@ not come up. What matters is not this failure but what happens to the
 phases around it.
 """
 
-from uml_runner import Machines
+from vivarium_runner import Machines
 
 
 async def test(vms: Machines) -> None:

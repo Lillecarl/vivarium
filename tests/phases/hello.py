@@ -1,6 +1,6 @@
 """A phase that does one small thing; see `interactive`."""
 
-from uml_runner import Machines
+from vivarium_runner import Machines
 
 
 async def test(vms: Machines) -> None:

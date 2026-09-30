@@ -1,7 +1,7 @@
 from collections.abc import AsyncIterator
 
 import pytest
-from uml_runner import Machine
+from vivarium_runner import Machine
 
 
 @pytest.fixture

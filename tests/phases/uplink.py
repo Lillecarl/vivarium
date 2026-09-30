@@ -10,7 +10,7 @@ DNS and TCP separately: they fail differently, and a run that resolves
 but cannot connect is a different fault from one that cannot resolve.
 """
 
-from uml_runner import Machines
+from vivarium_runner import Machines
 
 TARGET = "1.1.1.1"
 """An address, not a name, so the TCP answer does not depend on DNS."""
