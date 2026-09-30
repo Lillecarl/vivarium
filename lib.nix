@@ -716,26 +716,43 @@ rec {
         being told is now cheap, because it is one flag rather than an
         environment variable nobody remembers.
       */
-      runner = pkgs.writeShellApplication {
-        name = "uml-run-${name}";
-        text = ''
-          # checked: ${checked}
-          #
-          # Named in a comment, which is enough: Nix scans the text for
-          # store paths, so the type check is a dependency of this script
-          # and runs before it can. The by-hand door is where a type
-          # error gets written, so it is the door that must not skip the
-          # check.
-          exec ${uml} run --spec ${spec} "$@"
-        '';
-      };
+      /*
+        `uml` with this run's spec and some flags baked in: a binary
+        wrapper, no shell. The type check is named in its environment,
+        which makes it a dependency: the by-hand door is where a type
+        error gets written, so it must not skip the check.
+      */
+      wrap =
+        program: command: flags:
+        pkgs.runCommand program
+          {
+            nativeBuildInputs = [ pkgs.makeBinaryWrapper ];
+            meta.mainProgram = program;
+          }
+          ''
+            makeWrapper ${uml} $out/bin/${program} \
+              --add-flags ${lib.escapeShellArg "${command} --spec ${spec} ${flags}"} \
+              --set UML_TYPECHECKED ${lib.escapeShellArg checked}
+          '';
 
-      lister = pkgs.writeShellApplication {
-        name = "uml-phases-${name}";
-        text = ''
-          exec ${uml} phases --spec ${spec} "$@"
-        '';
-      };
+      # A run by hand that exits on the first failure, as the check does.
+      driver = wrap "uml-driver-${name}" "run" "";
+      # The same, paused on the first failure with the guests up. The MCP
+      # server starts this one.
+      driverDebug = wrap "uml-driver-debug-${name}" "run" "--break-on-failure";
+      # nixos-test's REPL: paused before the first phase; see uml/repl.py.
+      # `.driverInteractive` is this, from the run with `interactive`
+      # merged in.
+      driverInteractiveHere = wrap "uml-driver-interactive-${name}" "run" "--interactive";
+      lister = wrap "uml-phases-${name}" "phases" "";
+
+      extend =
+        { modules }:
+        mkSession {
+          imports = [ module ] ++ modules;
+        };
+      # Every guest on one backend, whatever its own configuration says.
+      onBackend = backend: extend { modules = [ { defaults.boot.uml.backend = lib.mkForce backend; } ]; };
 
       /*
         The run inside one, which never fails.
@@ -771,8 +788,19 @@ rec {
     pkgs.runCommand "uml-session-${name}"
       {
         passthru = {
-          inherit attempt spec nodes;
-          run = runner;
+          inherit
+            attempt
+            spec
+            nodes
+            driver
+            driverDebug
+            extend
+            driverInteractiveHere
+            ;
+          driverInteractive = (extend { modules = [ checkedConfig.interactive ]; }).driverInteractiveHere;
+          uml = onBackend "uml";
+          qemu = onBackend "qemu";
+          container = onBackend "container";
           phases = lister;
           config = checkedConfig;
         };

@@ -86,6 +86,16 @@ in
       '';
     };
 
+    interactive = mkOption {
+      type = types.deferredModule;
+      default = { };
+      description = ''
+        A module merged into this run for `.driverInteractive` only, as
+        nixos-test's `interactive`: a debug package on a guest, a longer
+        timeout. It may set anything the run itself sets.
+      '';
+    };
+
     backend = mkOption {
       type = types.enum [
         "uml"

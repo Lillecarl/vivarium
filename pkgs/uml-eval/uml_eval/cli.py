@@ -110,7 +110,8 @@ async def resolve(file: Path, attr: list[str], command: str) -> str:
         # the name of the check runs the session it checks.
         if not await target.has_attr("spec") and await target.has_attr("session"):
             target = target.attr("session")
-        built = Path(await target.attr(command).realise_string())
+        # `uml-eval run` runs the session's `.driver`; `phases` its `.phases`.
+        built = Path(await target.attr({"run": "driver"}.get(command, command)).realise_string())
     [program] = sorted((built / "bin").iterdir())
     return str(program)
 
