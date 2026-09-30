@@ -20,7 +20,7 @@ flight in a socketpair, and AF_UNIX bounds that two ways:
     against until the receiver reads it.
 
 Only the second is ours to set, so we set it to the maximum the host
-allows.  The first is why guests use a large MTU (see ``boot.uml.mtu``):
+allows.  The first is why guests use a large MTU (see ``vivarium.mtu``):
 ten 64K frames is a window worth having, ten 1500-byte ones is 15K, and
 that difference is most of the throughput between two guests.
 """

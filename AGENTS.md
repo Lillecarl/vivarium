@@ -146,7 +146,7 @@ An event carries `machine`, `phase` and `seconds` as fields, so a
 question about timing or about one guest is `jq` and not a regex. The
 `log` file holds the same run unfiltered, for reading.
 
-Every guest streams its journal while it runs (`boot.uml.journal`, on by
+Every guest streams its journal while it runs (`vivarium.journal`, on by
 default). Each entry becomes a `journal` event with `data.unit`,
 `data.identifier` and `data.priority`, attributed to the phase that was
 running:
@@ -261,7 +261,7 @@ file and before building.
 
 ## Two backends
 
-`boot.uml.backend` is `uml` or `qemu`, and `mkTest` takes it. A test
+`vivarium.backend` is `uml` or `qemu`, and `mkTest` takes it. A test
 script never knows which it got, and neither does a node configuration --
 keep it that way. Anything that has to differ belongs in
 `modules/qemu.nix` or in `vivarium_runner/backend.py`, not in a test.
@@ -280,7 +280,7 @@ nix build .#lan .#lan.qemu --print-build-logs 2>&1 | tee /tmp/umlboth.log
 `.#lan.qemu` needs `/dev/kvm` and asks the daemon for the `kvm` feature,
 so it refuses to build where there is none rather than failing.
 
-A run can hold both kinds: a node sets its own `boot.uml.backend`, and
+A run can hold both kinds: a node sets its own `vivarium.backend`, and
 the run's `backend` is only the default. The toolchain and the `kvm`
 feature follow the machines, and a segment carries raw frames both
 accept. UML for what is single-threaded and should cost the host little,
@@ -341,7 +341,7 @@ both work.
   (measured). Keep every link when touching it.
 
 A QEMU guest gets `-cpu host` minus `vmx` and `svm`, so it cannot run
-VMs. `boot.uml.nestedVirtualization = true` passes the flag through and
+VMs. `vivarium.nestedVirtualization = true` passes the flag through and
 loads KVM in the guest; the host needs nesting on. `nix build --file .
 nested` proves both halves, by hand only: a GitHub runner's KVM does
 not nest again.
@@ -430,7 +430,7 @@ numbers lie:
 
 ## Port forwarding
 
-`boot.uml.forward` is read before the guest boots and cannot be changed
+`vivarium.forward` is read before the guest boots and cannot be changed
 after, because passt cannot: it binds every socket while parsing its
 arguments and has no control socket. `auto` mode is pasta-only. If you
 find yourself designing something that watches the guest and adds a
@@ -519,9 +519,9 @@ grep -E '^CONFIG_(NF_|IP_NF_|VETH|BRIDGE)' \
 - A failure inside the guest agent shows up on the host as an exception
   from `vm.execute`, but the guest-side traceback is only in the guest
   journal — `await vm.journal("uml-agent")`.
-- `boot.uml.memory` below ~192M gets the agent OOM-killed partway
+- `vivarium.memory` below ~192M gets the agent OOM-killed partway
   through a test, which looks like a hang.
-- `boot.uml.memory` is a ceiling, not a cost: guest memory is a sparse
+- `vivarium.memory` is a ceiling, not a cost: guest memory is a sparse
   file on both backends, and the guest reports the blocks it frees so the
   host punches holes in it. `vm.host_memory_kib()` is what the host pays;
   no number inside the guest can see it. Measured at `memory = "1024M"`,

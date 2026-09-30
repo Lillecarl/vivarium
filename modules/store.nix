@@ -1,7 +1,7 @@
 /*
   Give the guest the host's whole store as a Nix store it can build into.
 
-  `boot.uml.nixDatabase` registers one closure, which is enough for a guest
+  `vivarium.nixDatabase` registers one closure, which is enough for a guest
   that runs the programs a test put in it. It is not enough for a guest that
   runs Nix: everything else on the host is right there under `/nix/store`,
   readable, and invalid as far as Nix is concerned.
@@ -27,7 +27,7 @@
   ...
 }:
 let
-  cfg = config.boot.uml;
+  cfg = config.vivarium;
 
   # Nested store URLs go in a parameter, so their own separators have to
   # stop being separators.
@@ -49,7 +49,7 @@ let
   ];
 in
 {
-  options.boot.uml.hostStore.enable = lib.mkEnableOption ''
+  options.vivarium.hostStore.enable = lib.mkEnableOption ''
     a Nix store in the guest whose lower layer is the host's whole store.
 
     Needs the guest to run outside a Nix build sandbox, because a sandbox
@@ -83,7 +83,7 @@ in
       script = ''
         if [ ! -e /host/nix/var/nix/db/db.sqlite ]; then
           echo "no /host/nix/var/nix/db/db.sqlite, so the host's store cannot" >&2
-          echo "be the lower layer -- boot.uml.hostStore needs a guest that" >&2
+          echo "be the lower layer -- vivarium.hostStore needs a guest that" >&2
           echo "runs outside a Nix build sandbox" >&2
           exit 1
         fi

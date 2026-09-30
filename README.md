@@ -168,7 +168,7 @@ phase needs, and the knobs it reads — so enabling it is one line, and
 overriding any part of it is an option like any other.
 
 ```nix
-uml.recipes.boot.enable = false;           # off
+vivarium.recipes.boot.enable = false;           # off
 phases.boot.script = ./my-own-boot.py;     # replaced
 ```
 
@@ -177,7 +177,7 @@ system and names the failed units when one does not. Forgetting that
 wait is how a test becomes flaky.
 
 No recipe collects the journal: every guest streams it to the host
-while it runs (`boot.uml.journal`, on by default), so it survives a
+while it runs (`vivarium.journal`, on by default), so it survives a
 guest that is killed, and each entry is an event in `events.jsonl`
 with its machine, unit, phase and pytest test.
 
@@ -235,13 +235,13 @@ lan = mkTest {
   name = "lan";
   script = ./tests/lan.py;
   nodes = {
-    server.boot.uml.lan = { network = "lan"; address = "192.168.99.2/24"; };
-    client.boot.uml.lan = { network = "lan"; address = "192.168.99.3/24"; };
+    server.vivarium.lan = { network = "lan"; address = "192.168.99.2/24"; };
+    client.vivarium.lan = { network = "lan"; address = "192.168.99.3/24"; };
   };
 };
 ```
 
-Machines naming the same `boot.uml.lan.network` are wired together on
+Machines naming the same `vivarium.lan.network` are wired together on
 `vec1`; ssh ports and host addresses are handed out automatically. The
 script gets them by name:
 
@@ -309,7 +309,7 @@ host. AF_UNIX only lets about ten datagrams queue on a socket before the
 sender blocks — `net.unix.max_dgram_qlen`, which a Nix sandbox's network
 namespace gets at its default of 10 and cannot raise — so at a 1500-byte
 MTU a guest has 15 KB in flight and no more. Guests therefore run a
-65000-byte MTU by default (`boot.uml.mtu`), which measures about
+65000-byte MTU by default (`vivarium.mtu`), which measures about
 11 Gbit/s over `vec1` against about 4 at 1500.
 
 ## Reaching a guest from the host
@@ -335,11 +335,11 @@ to a VM over a socket, does not. Adding a forward to a live passt means
 restarting it, which drops every connection through it, including the ssh
 session you were in when you started the service you wanted to reach.
 
-So `boot.uml.forward` decides them before boot, and `ports = "all"` exists
+So `vivarium.forward` decides them before boot, and `ports = "all"` exists
 to make not deciding affordable:
 
 ```nix
-boot.uml.forward = [
+vivarium.forward = [
   { ports = "all"; }                                   # the guest, privately
   { address = "0.0.0.0"; ports = [ 8080 ]; }           # and one port, publicly
 ];
@@ -377,14 +377,14 @@ having, since it needs a reboot to fix.
 
 ## Backends
 
-`mkTest` takes `backend`, and a node may override `boot.uml.backend` for
+`mkTest` takes `backend`, and a node may override `vivarium.backend` for
 itself. Nothing above that line changes: the same `tests/lan.py` and the
 same two node configurations run as `lan` and as `lan.qemu`.
 
 |  | `uml` (default) | `qemu` |
 | --- | --- | --- |
 | needs | nothing | `/dev/kvm` |
-| processors | one | `boot.uml.cpus` |
+| processors | one | `vivarium.cpus` |
 | kernel | built for `ARCH=um`, all built in | the host's, with an initrd |
 | the store | hostfs | virtiofs |
 | default RAM | 256M | 512M |
@@ -447,7 +447,7 @@ Two things worth keeping:
 - **QEMU is about 20% faster on one processor**, before any parallelism.
   The segment is the same socketpair either way, so this is the guest's
   own cost, not the switch's.
-- **A second processor helps here and hurts under UML.** `boot.uml.cpus =
+- **A second processor helps here and hurts under UML.** `vivarium.cpus =
   2` is worth about 11% on QEMU. Under UML two vCPUs measured *slower*
   than one on this same test — the cross-CPU work costs more than the
   parallelism buys. Do not carry a conclusion from one backend to the
@@ -557,7 +557,7 @@ the process rather than leaving a gigabyte in `/tmp`. Measured: `/tmp` is
 unchanged across a full run on either backend.
 
 The guest's `/nix/var` is its own, never the host's — see `guest.nix`. Nix
-inside the guest knows the paths `boot.uml.nixDatabase` covers, and nothing
+inside the guest knows the paths `vivarium.nixDatabase` covers, and nothing
 else.
 
 That set is the test's own closure, and `mkTest` works it out: the guest's
@@ -575,8 +575,8 @@ nothing about it can be stale.
 
 ### The host's whole store, inside the guest
 
-`boot.uml.hostStore.enable` makes Nix in the guest see every path on the
-host, not just the closure `boot.uml.nixDatabase` registered. The guest's
+`vivarium.hostStore.enable` makes Nix in the guest see every path on the
+host, not just the closure `vivarium.nixDatabase` registered. The guest's
 `/nix` is already an overlay of the host's `/nix` under a writable layer,
 which is exactly the shape Nix's `local-overlay` store wants, so this is
 configuration and no new mount: the host's store below, read-only, and
@@ -610,7 +610,7 @@ Two measured limits worth knowing before they surprise you:
 
 A guest's memory is one sparse file on either backend — UML maps an
 unlinked temporary file, QEMU a `memory-backend-memfd`. So
-`boot.uml.memory` is not what the guest costs: the host pays for the
+`vivarium.memory` is not what the guest costs: the host pays for the
 blocks that file has allocated, which start near zero and grow towards
 `memory` as the guest touches pages.
 
@@ -757,7 +757,7 @@ after it changes, and cached by cachix after that.
 ```
 flake.nix               mkNode, mkTest, the tests and the demo guest
 ci/                     the GitHub Actions workflows, as Nix
-modules/default.nix     the boot.uml options
+modules/default.nix     the vivarium options
 modules/guest.nix       what a guest system looks like, either backend
 modules/image.nix       UML: the root image, /init, and the vivarium-run wrapper
 modules/qemu.nix        QEMU: the initrd, the virtiofs store, the MACs
@@ -786,7 +786,7 @@ only runs outside the sandbox.
 - A UML guest is single-CPU. The kernel takes `smp = true`, but UML only
   allows SMP with the seccomp userspace, and two vCPUs measured *slower*
   than one on the iperf test — the cross-CPU work costs more than the
-  parallelism buys. A QEMU guest takes `boot.uml.cpus`.
+  parallelism buys. A QEMU guest takes `vivarium.cpus`.
 - `lan` and `iperf` have been run on both backends, and so has nixkube's
   own node test — a kubeadm control plane, a CSI driver and nine chaos
   scenarios — inside the sandbox and outside it. This repository's

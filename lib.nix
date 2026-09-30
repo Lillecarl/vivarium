@@ -37,7 +37,7 @@ rec {
 
         typeCheck { scripts = [ ./tests/uml/run.py ]; }
 
-    `mkTest` calls this itself -- see `boot.uml.typeCheck`.  Call it
+    `mkTest` calls this itself -- see `vivarium.typeCheck`.  Call it
     directly for scripts that are not a test's.
   */
   typeCheck =
@@ -128,25 +128,25 @@ rec {
     machine:
     {
       name = machine.networking.hostName;
-      backend = machine.boot.uml.backend;
-      index = machine.boot.uml.index;
-      memory = machine.boot.uml.memory;
-      seccomp = machine.boot.uml.seccomp;
-      cpus = machine.boot.uml.cpus;
-      sshPort = machine.boot.uml.sshPort;
-      mtu = machine.boot.uml.mtu;
-      network = machine.boot.uml.lan.network;
-      address = machine.boot.uml.lan.address;
-      forward = machine.boot.uml.forward;
-      # Both backends get a read-only root image of `boot.uml.diskSize`
+      backend = machine.vivarium.backend;
+      index = machine.vivarium.index;
+      memory = machine.vivarium.memory;
+      seccomp = machine.vivarium.seccomp;
+      cpus = machine.vivarium.cpus;
+      sshPort = machine.vivarium.sshPort;
+      mtu = machine.vivarium.mtu;
+      network = machine.vivarium.lan.network;
+      address = machine.vivarium.lan.address;
+      forward = machine.vivarium.forward;
+      # Both backends get a read-only root image of `vivarium.diskSize`
       # and a per-run copy-on-write layer over it. Only what is inside
       # differs: UML boots `/init` from it, QEMU mounts it as `/`.
       image = "${machine.system.build.umlRootImage}";
     }
-    // lib.optionalAttrs (machine.boot.uml.backend == "qemu") {
+    // lib.optionalAttrs (machine.vivarium.backend == "qemu") {
       boot = machine.system.build.qemuBoot;
     }
-    // lib.optionalAttrs (machine.boot.uml.backend == "container") {
+    // lib.optionalAttrs (machine.vivarium.backend == "container") {
       boot = machine.system.build.containerBoot;
     };
 
@@ -159,14 +159,14 @@ rec {
     has no use for it.
 
     Taken from the machines and not from the run's `backend`: a node may
-    set its own `boot.uml.backend`, and a run then holds both kinds. The
+    set its own `vivarium.backend`, and a run then holds both kinds. The
     runner picks a backend per machine, and a segment carries raw frames
     that both accept, so nothing else has to know.
   */
   toolchainFor =
     machines:
     let
-      on = backend: lib.filter (machine: machine.boot.uml.backend == backend) machines;
+      on = backend: lib.filter (machine: machine.vivarium.backend == backend) machines;
       uml = on "uml";
     in
     {
@@ -198,7 +198,7 @@ rec {
   featuresFor =
     machines:
     let
-      any = backend: lib.any (machine: machine.boot.uml.backend == backend) machines;
+      any = backend: lib.any (machine: machine.vivarium.backend == backend) machines;
     in
     lib.optional (any "qemu") "kvm" ++ lib.optional (any "container") "uid-range";
 
@@ -232,13 +232,13 @@ rec {
   probeFor =
     machines:
     let
-      containers = lib.filter (machine: machine.boot.uml.backend == "container") machines;
+      containers = lib.filter (machine: machine.vivarium.backend == "container") machines;
     in
     if containers == [ ] then
       null
     else
       containerProbe {
-        tun = lib.any (machine: machine.boot.uml.lan.network != null) containers;
+        tun = lib.any (machine: machine.vivarium.lan.network != null) containers;
       };
 
   /*
@@ -252,7 +252,7 @@ rec {
         lib.mapAttrsToList (
           _: peer:
           let
-            address = peer.boot.uml.lan.address;
+            address = peer.vivarium.lan.address;
           in
           lib.optionalAttrs (address != null) {
             ${lib.head (lib.splitString "/" address)} = [ peer.networking.hostName ];
@@ -365,10 +365,10 @@ rec {
             ];
             _module.args.nodes = nodes;
             networking.hostName = lib.mkDefault hostName;
-            boot.uml.sshPort = lib.mkDefault (4325 + index);
-            boot.uml.backend = lib.mkDefault backend;
-            boot.uml.index = index;
-            boot.uml.nixDatabase.extraRoots = lib.optional (checkedConfig.settings != { }) "${settingsFile}";
+            vivarium.sshPort = lib.mkDefault (4325 + index);
+            vivarium.backend = lib.mkDefault backend;
+            vivarium.index = index;
+            vivarium.nixDatabase.extraRoots = lib.optional (checkedConfig.settings != { }) "${settingsFile}";
           })
         ) (lib.attrNames checkedConfig.nodes)
       );
@@ -385,7 +385,7 @@ rec {
       # check is a recipe that breaks its consumers.
       checked =
         let
-          typing = first.boot.uml.typeCheck;
+          typing = first.vivarium.typeCheck;
         in
         lib.optionalString typing.enable "${typeCheck {
           name = "${name}-phases";
@@ -431,12 +431,12 @@ rec {
             ) checkedConfig.ordered;
             # Each guest's closure, which the runner turns into its store
             # view. The same closureInfo its Nix database is loaded from.
-            # Not for `boot.uml.hostStore`, whose point is the host's whole
+            # Not for `vivarium.hostStore`, whose point is the host's whole
             # store and its database under the guest's own.
             machines = map (
               machine:
               machineSpec machine
-              // lib.optionalAttrs (!machine.boot.uml.hostStore.enable) {
+              // lib.optionalAttrs (!machine.vivarium.hostStore.enable) {
                 storePaths = "${machine.system.build.umlNixRegistration}/store-paths";
               }
             ) machines;
@@ -491,7 +491,7 @@ rec {
           imports = [ module ] ++ modules;
         };
       # Every guest on one backend, whatever its own configuration says.
-      onBackend = backend: extend { modules = [ { defaults.boot.uml.backend = lib.mkForce backend; } ]; };
+      onBackend = backend: extend { modules = [ { defaults.vivarium.backend = lib.mkForce backend; } ]; };
 
       /*
         The run inside one, which never fails.

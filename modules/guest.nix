@@ -7,7 +7,7 @@
   ...
 }:
 let
-  cfg = config.boot.uml;
+  cfg = config.vivarium;
 
   # "192.168.99.2/24" -> { address = "192.168.99.2"; prefixLength = 24; }
   parseCidr =

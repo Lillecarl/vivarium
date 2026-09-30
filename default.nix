@@ -41,13 +41,13 @@ let
   # Two guests on one segment, addressed statically.
   pair = network: {
     server = {
-      boot.uml.lan = {
+      vivarium.lan = {
         inherit network;
         address = "192.168.99.2/24";
       };
     };
     client = {
-      boot.uml.lan = {
+      vivarium.lan = {
         inherit network;
         address = "192.168.99.3/24";
       };
@@ -85,7 +85,7 @@ let
           inherit cri;
           runtimes = [ "kata" ];
         };
-        boot.uml = {
+        vivarium = {
           nestedVirtualization = true;
           memory = "4096M";
           diskSize = 2048;
@@ -123,7 +123,7 @@ let
           # is tainted and gets one anyway: a taint is not a guarantee.
           persistentVolumes = 1;
         };
-        boot.uml = {
+        vivarium = {
           memory = if role == "control-plane" then "2560M" else "1280M";
           # The images are symlinks into the host's store, so this
           # only has to hold containerd's state, the kubelet's, and
@@ -152,13 +152,13 @@ let
   ci = pkgs.callPackage ./ci { inherit sources; };
 
   demo = mkNode {
-    boot.uml.memory = "512M";
+    vivarium.memory = "512M";
     # A guest you drive by hand rather than from a test: give it a
     # host address to itself with everything on it forwarded, so
     # whatever you start in there is reachable without having said
     # so in advance.  Tests keep the narrow default; three guests
     # holding 36000 sockets each is not what a builder is for.
-    boot.uml.forward = [ { ports = "all"; } ];
+    vivarium.forward = [ { ports = "all"; } ];
     environment.systemPackages = [ pkgs.speedtest-cli ];
   };
 
@@ -185,7 +185,7 @@ let
     nodes.node =
       { config, ... }:
       {
-        boot.uml = {
+        vivarium = {
           hostStore.enable = true;
           memory = "1024M";
         };
@@ -223,7 +223,7 @@ let
         role = "control-plane";
         images = "pull";
       };
-      boot.uml = {
+      vivarium = {
         memory = "4096M";
         diskSize = 8192;
         cpus = 4;
@@ -317,7 +317,7 @@ let
         after = [ "boot" ];
       };
       nodes.node = {
-        boot.uml.forward = [ { ports = "all"; } ];
+        vivarium.forward = [ { ports = "all"; } ];
         environment.systemPackages = [ pkgs.python3 ];
       };
     };
@@ -760,7 +760,7 @@ let
     */
     container = mkTest {
       name = "container";
-      nodes.one.boot.uml.backend = "container";
+      nodes.one.vivarium.backend = "container";
       phases.check = {
         script = ./tests/phases/container.py;
         after = [ "boot" ];
@@ -777,7 +777,7 @@ let
     container-lan = mkTest {
       name = "container-lan";
       nodes = lib.mapAttrs (name: value: {
-        boot.uml = {
+        vivarium = {
           backend = if name == "u" then "uml" else "container";
           lan = {
             network = "clan";
@@ -799,21 +799,21 @@ let
       One run, both kinds of guest: a UML guest and a QEMU guest on one
       segment. UML for what is single-threaded and wants to cost the host
       little, QEMU for what wants the CPU. A node sets its own
-      `boot.uml.backend`; the run's `backend` is only the default.
+      `vivarium.backend`; the run's `backend` is only the default.
 
       By hand: the QEMU guest needs /dev/kvm, which the session job in CI
       does not have.
     */
     mixed = mkTest {
       name = "mixed";
-      nodes.small.boot.uml = {
+      nodes.small.vivarium = {
         backend = "uml";
         lan = {
           network = "mixed";
           address = "10.55.0.1/24";
         };
       };
-      nodes.fast.boot.uml = {
+      nodes.fast.vivarium = {
         backend = "qemu";
         lan = {
           network = "mixed";
@@ -837,7 +837,7 @@ let
       name = "nested";
       backend = "qemu";
       nodes.nested = {
-        boot.uml.nestedVirtualization = true;
+        vivarium.nestedVirtualization = true;
         environment.systemPackages = [ pkgs.python3 ];
       };
       nodes.plain = { };
@@ -940,11 +940,11 @@ let
     peers = mkTest {
       name = "peers";
       defaults.environment.etc."uml-defaults".text = "from-defaults\n";
-      nodes.server.boot.uml.lan = {
+      nodes.server.vivarium.lan = {
         network = "peers";
         address = "192.168.99.2/24";
       };
-      nodes.client.boot.uml.lan = {
+      nodes.client.vivarium.lan = {
         network = "peers";
         address = "192.168.99.3/24";
       };
@@ -960,9 +960,9 @@ let
     */
     store-view = mkTest {
       name = "store-view";
-      nodes.u.boot.uml.backend = "uml";
-      nodes.q.boot.uml.backend = "qemu";
-      nodes.c.boot.uml.backend = "container";
+      nodes.u.vivarium.backend = "uml";
+      nodes.q.vivarium.backend = "qemu";
+      nodes.c.vivarium.backend = "container";
       phases.view = {
         script = ./tests/phases/store-view.py;
         after = [ "boot" ];
@@ -1024,7 +1024,7 @@ let
     backends = mkTest {
       name = "backends";
       nodes = lib.mapAttrs (name: backend: {
-        boot.uml = {
+        vivarium = {
           inherit backend;
           lan = {
             network = "backends";
@@ -1305,7 +1305,7 @@ let
         # Large enough that reading the guest's own closure is page cache
         # and not pressure, which is what lets the test attribute what it
         # frees afterwards.
-        boot.uml.memory = "1024M";
+        vivarium.memory = "1024M";
       };
     };
 
@@ -1340,9 +1340,9 @@ let
           services.uml-k8s = {
             enable = true;
             role = "worker";
-            runtimes = [ "crun" ] ++ lib.optional (config.boot.uml.backend != "uml") "runsc";
+            runtimes = [ "crun" ] ++ lib.optional (config.vivarium.backend != "uml") "runsc";
           };
-          boot.uml = {
+          vivarium = {
             memory = "1024M";
             diskSize = 2048;
             lan = {
@@ -1386,7 +1386,7 @@ let
             # module's assertion.
             runtimes = [ "crun" ];
           };
-          boot.uml = {
+          vivarium = {
             memory = "1024M";
             diskSize = 2048;
             lan = {

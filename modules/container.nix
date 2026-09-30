@@ -11,7 +11,7 @@
   ...
 }:
 let
-  cfg = config.boot.uml;
+  cfg = config.vivarium;
 in
 lib.mkIf (cfg.backend == "container") {
   boot.isContainer = true;
@@ -21,7 +21,7 @@ lib.mkIf (cfg.backend == "container") {
 
   # No serial line. The runner binds a directory at /run/host/agent, and
   # the agent listens on a socket in it.
-  boot.uml.agentDevice = "unix:/run/host/agent/sock";
+  vivarium.agentDevice = "unix:/run/host/agent/sock";
 
   # A Nix build's seccomp filter refuses setuid bits, and the runner says
   # so with a file (vivarium_runner.container.NO_SETUID). Skipped rather than

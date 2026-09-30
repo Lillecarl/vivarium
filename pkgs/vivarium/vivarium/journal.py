@@ -116,7 +116,7 @@ class Tail:
 
     @property
     def streaming(self) -> bool:
-        """Has anything arrived? A guest with `boot.uml.journal` off never
+        """Has anything arrived? A guest with `vivarium.journal` off never
         writes the file, and waiting on it would wait for nothing."""
         return self._offset > 0
 

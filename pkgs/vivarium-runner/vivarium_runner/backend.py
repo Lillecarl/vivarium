@@ -299,7 +299,7 @@ class Uml:
             # which measures a few percent on throughput and about five
             # seconds off a boot.  "auto" falls back to ptrace where the
             # host will not let us install a filter, rather than
-            # refusing to boot the way "on" does.  `boot.uml.seccomp` sets
+            # refusing to boot the way "on" does.  `vivarium.seccomp` sets
             # it; "off" is the ptrace userspace -- see issue #8.
             f"seccomp={spec.seccomp}",
             # The management console, which is how the host asks this

@@ -35,7 +35,7 @@ def _parse(argv: list[str] | None) -> argparse.Namespace:
     parser.add_argument(
         "--forward",
         default="[]",
-        help="JSON list of forward rules, as boot.uml.forward generates",
+        help="JSON list of forward rules, as vivarium.forward generates",
     )
     parser.add_argument("--mem", default="128M")
     parser.add_argument("--mtu", type=int, default=65000)

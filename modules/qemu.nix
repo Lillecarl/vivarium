@@ -19,7 +19,7 @@
   ...
 }:
 let
-  cfg = config.boot.uml;
+  cfg = config.vivarium;
 
   hex = n: (lib.optionalString (n < 16) "0") + lib.toHexString n;
 in
@@ -28,7 +28,7 @@ lib.mkIf (cfg.backend == "qemu") {
   # prints to it from the first line, and a virtio console does not exist
   # until its driver loads -- so a panic before that would be invisible.
   # The agent takes hvc0 instead.
-  boot.uml.agentDevice = "/dev/hvc0";
+  vivarium.agentDevice = "/dev/hvc0";
 
   boot.kernelParams = [
     "console=ttyS0,115200"
@@ -75,8 +75,8 @@ lib.mkIf (cfg.backend == "qemu") {
     A tmpfs root is tempting here -- one less device, and a guest throws
     its root away at poweroff anyway. It is wrong, and the way it is wrong
     is invisible until a test writes something: a tmpfs is charged to the
-    RAM the guest is running in, so `boot.uml.diskSize` would silently
-    become `boot.uml.memory` and a guest that writes a few hundred MB
+    RAM the guest is running in, so `vivarium.diskSize` would silently
+    become `vivarium.memory` and a guest that writes a few hundred MB
     would run out of memory rather than out of disk.
 
     Measured: nixkube's node test copies a closure into the node's own

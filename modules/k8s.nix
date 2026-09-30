@@ -38,7 +38,7 @@ let
   # let kubelet pick its own IP would register the same InternalIP as
   # every other node, and the API server would talk to whichever one it
   # happened to reach.
-  address = config.boot.uml.lan.address;
+  address = config.vivarium.lan.address;
   nodeIp = if address == null then "0.0.0.0" else lib.head (lib.splitString "/" address);
 
   # kubeadm takes extraArgs as a list of name/value pairs from v1beta4 on.
@@ -441,7 +441,7 @@ let
     mapping and `kubectl apply` reads a List as the resources in it.
 
     The capacity is a label and not a limit: nothing enforces a hostPath
-    volume's size.  It is `boot.uml.diskSize` because that *is* the bound --
+    volume's size.  It is `vivarium.diskSize` because that *is* the bound --
     the volumes are directories on the guest's root image, which also holds
     everything else the guest writes.  A fixed number here would be a claim
     the disk cannot honour, and the only thing that goes wrong is silence:
@@ -481,7 +481,7 @@ let
       kind = "PersistentVolume";
       metadata.name = "${config.networking.hostName}-${toString index}";
       spec = {
-        capacity.storage = "${toString config.boot.uml.diskSize}Mi";
+        capacity.storage = "${toString config.vivarium.diskSize}Mi";
         accessModes = [ "ReadWriteOnce" ];
         persistentVolumeReclaimPolicy = "Retain";
         storageClassName = "standard";
@@ -668,7 +668,7 @@ in
         UML its shim panics at start with "None of the address space sizes
         could be successfully mmaped", and under CRI-O no container runs.
 
-        `kata` is Kata Containers, and needs `boot.uml.nestedVirtualization`:
+        `kata` is Kata Containers, and needs `vivarium.nestedVirtualization`:
         it starts a VM per pod.
       '';
     };
@@ -765,7 +765,7 @@ in
   config = lib.mkIf cfg.enable {
     assertions = [
       {
-        assertion = !(lib.elem "runsc" cfg.runtimes && config.boot.uml.backend == "uml");
+        assertion = !(lib.elem "runsc" cfg.runtimes && config.vivarium.backend == "uml");
         message = "services.uml-k8s.runtimes: runsc (gVisor) does not start under UML; use the qemu backend.";
       }
       {
@@ -777,13 +777,13 @@ in
         message = "services.uml-k8s.runtimes: runsc (gVisor) does not run a container under CRI-O here; use cri = \"containerd\".";
       }
       {
-        assertion = lib.elem "kata" cfg.runtimes -> config.boot.uml.nestedVirtualization;
-        message = "services.uml-k8s.runtimes: kata starts a VM per pod and needs boot.uml.nestedVirtualization.";
+        assertion = lib.elem "kata" cfg.runtimes -> config.vivarium.nestedVirtualization;
+        message = "services.uml-k8s.runtimes: kata starts a VM per pod and needs vivarium.nestedVirtualization.";
       }
       {
-        assertion = config.boot.uml.lan.address != null;
+        assertion = config.vivarium.lan.address != null;
         message = ''
-          services.uml-k8s needs boot.uml.lan.address: every guest shares
+          services.uml-k8s needs vivarium.lan.address: every guest shares
           one address behind passt, so a node with no segment of its own
           has no address to register with.
         '';

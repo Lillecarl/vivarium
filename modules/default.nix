@@ -4,7 +4,7 @@
 # just a process: no KVM, no root, no tap devices.  The pieces are split
 # across three files:
 #
-#   default.nix  the boot.uml options and the packages a guest needs
+#   default.nix  the vivarium options and the packages a guest needs
 #   guest.nix    what the guest system itself looks like
 #   image.nix    the root image, /init, and the vivarium-run wrapper
 {
@@ -117,7 +117,7 @@ in
     ./store.nix
   ];
 
-  options.boot.uml = {
+  options.vivarium = {
     backend = lib.mkOption {
       type = lib.types.enum [ "uml" "qemu" "container" ];
       default = "uml";
@@ -164,7 +164,7 @@ in
 
     memory = lib.mkOption {
       type = lib.types.str;
-      default = if config.boot.uml.backend == "qemu" then "512M" else "256M";
+      default = if config.vivarium.backend == "qemu" then "512M" else "256M";
       defaultText = lib.literalExpression ''if backend == "qemu" then "512M" else "256M"'';
       example = "1024M";
       description = ''
@@ -317,8 +317,8 @@ in
 
     forward = lib.mkOption {
       type = lib.types.listOf forwardRule;
-      default = [ { ports = [ config.boot.uml.sshPort ]; } ];
-      defaultText = lib.literalExpression ''[ { ports = [ config.boot.uml.sshPort ]; } ]'';
+      default = [ { ports = [ config.vivarium.sshPort ]; } ];
+      defaultText = lib.literalExpression ''[ { ports = [ config.vivarium.sshPort ]; } ]'';
       example = lib.literalExpression ''
         [
           { ports = "all"; }                              # the whole guest, privately
@@ -486,9 +486,9 @@ in
   config = {
     assertions = [
       {
-        assertion = config.boot.uml.lan.address == null
-          -> config.boot.uml.lan.network == null;
-        message = "boot.uml.lan.address is set but boot.uml.lan.network is not, so nothing would be wired to vec1.";
+        assertion = config.vivarium.lan.address == null
+          -> config.vivarium.lan.network == null;
+        message = "vivarium.lan.address is set but vivarium.lan.network is not, so nothing would be wired to vec1.";
       }
       {
         # Two wide rules on one address overlap on every port, and passt
@@ -496,20 +496,20 @@ in
         # lines of console for a configuration that meant one rule.
         assertion =
           let
-            wide = lib.filter (rule: rule.ports == "all") config.boot.uml.forward;
+            wide = lib.filter (rule: rule.ports == "all") config.vivarium.forward;
             addresses = map (rule: toString rule.address) wide;
           in
           addresses == lib.unique addresses;
         message = ''
-          boot.uml.forward has more than one `ports = "all"` rule on the same
+          vivarium.forward has more than one `ports = "all"` rule on the same
           address (rules with `address = null` all land on the same one).
           Give them different addresses, or fold them into a single rule.
         '';
       }
       {
-        assertion = config.boot.uml.nestedVirtualization -> config.boot.uml.backend == "qemu";
+        assertion = config.vivarium.nestedVirtualization -> config.vivarium.backend == "qemu";
         message = ''
-          boot.uml.nestedVirtualization needs `backend = "qemu"`: a UML guest
+          vivarium.nestedVirtualization needs `backend = "qemu"`: a UML guest
           has no virtual CPU to expose vmx or svm on.
         '';
       }
@@ -522,7 +522,7 @@ in
 
       /*
         What the guest tells Nix about the store it can see -- see
-        `boot.uml.nixDatabase`.
+        `vivarium.nixDatabase`.
 
         Here rather than in guest.nix on purpose. A `closureInfo` over
         `toplevel` cannot be named by anything inside `toplevel`, and a
@@ -538,7 +538,7 @@ in
         into the database the guest boots with.
       */
       umlNixRegistration = pkgs.closureInfo {
-        rootPaths = [ config.system.build.toplevel ] ++ config.boot.uml.nixDatabase.extraRoots;
+        rootPaths = [ config.system.build.toplevel ] ++ config.vivarium.nixDatabase.extraRoots;
       };
 
       /*
@@ -595,7 +595,7 @@ in
     # attribute set, not options, so this is optionalAttrs rather than
     # mkIf -- an attribute that is not defined cannot be evaluated by
     # accident, which is the point.
-    // lib.optionalAttrs (config.boot.uml.backend == "uml") {
+    // lib.optionalAttrs (config.vivarium.backend == "uml") {
       umlKernel = pkgs.callPackage ../pkgs/uml-kernel {
         inherit (config.boot.kernelPackages.kernel) src version modDirVersion;
       };

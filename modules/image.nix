@@ -11,7 +11,7 @@
   ...
 }:
 let
-  cfg = config.boot.uml;
+  cfg = config.vivarium;
   build = config.system.build;
 
   /*

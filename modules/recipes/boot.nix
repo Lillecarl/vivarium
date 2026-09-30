@@ -1,10 +1,10 @@
 # Wait for the guests to finish booting before anything else runs.
 { config, lib, ... }:
 let
-  cfg = config.uml.recipes.boot;
+  cfg = config.vivarium.recipes.boot;
 in
 {
-  options.uml.recipes.boot = {
+  options.vivarium.recipes.boot = {
     enable = lib.mkEnableOption "a first phase that waits for every guest to come up" // {
       default = true;
       example = false;

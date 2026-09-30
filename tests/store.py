@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """One guest whose Nix can see the whole host store.
 
-`boot.uml.hostStore` puts the host's store under the guest's own writable
+`vivarium.hostStore` puts the host's store under the guest's own writable
 layer as a Nix local-overlay store.  This checks the two halves of that:
 
   * a path the guest was never told about, and that is not in its closure,

@@ -824,7 +824,7 @@ class Machine:
     async def shrink(self, amount: str) -> None:
         """Take *amount* of memory away from this guest.
 
-        ``amount`` is written the way ``boot.uml.memory`` is: ``"256M"``.
+        ``amount`` is written the way ``vivarium.memory`` is: ``"256M"``.
 
         A balloon, so **the pages come from what is already free**, and
         how much it gets is worth measuring rather than assuming --

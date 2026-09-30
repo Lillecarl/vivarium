@@ -13,7 +13,7 @@
     `nodeDefaults` and `containerDefaults` to their own kind.
   - Every guest is on vlan 1 at 192.168.1.<n>, as nixos-test places it,
     and `networking.primaryIPAddress` says so.
-  - `virtualisation.memorySize` and `.cores` become `boot.uml.memory`
+  - `virtualisation.memorySize` and `.cores` become `vivarium.memory`
     and `.cpus`.
   - `testScript` becomes one phase after `boot`, run through
     `vivarium_runner.nixos_test`, which gives it nixos-test's API.
@@ -101,9 +101,9 @@ let
       };
       config = {
         networking.primaryIPAddress = address name;
-        boot.uml.memory = "${toString config.virtualisation.memorySize}M";
-        boot.uml.cpus = config.virtualisation.cores;
-        boot.uml.lan = {
+        vivarium.memory = "${toString config.virtualisation.memorySize}M";
+        vivarium.cpus = config.virtualisation.cores;
+        vivarium.lan = {
           network = "vlan1";
           address = "${address name}/24";
         };
@@ -126,7 +126,7 @@ let
           node
           (compat name)
         ];
-        boot.uml.backend = "container";
+        vivarium.backend = "container";
       }) t.containers;
     pythonPath = map (package: "${package}/${pkgs.python3.sitePackages}") (
       t.extraPythonPackages pkgs.python3Packages
