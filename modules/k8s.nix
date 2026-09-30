@@ -972,59 +972,6 @@ in
 
     # ── kubelet ────────────────────────────────────────────────────
 
-    /*
-      Tell the machine how fast it is, because kubelet will not start
-      otherwise.
-
-      cadvisor, which kubelet embeds, looks for a clock speed in exactly
-      two places: the cpufreq sysfs, which UML has no driver for, and a
-      "cpu MHz" line in /proc/cpuinfo, which UML does not print.  Finding
-      neither is fatal, and it fails before anything interesting has
-      happened:
-
-        failed to run Kubelet: could not detect clock speed from output:
-        "processor\t: 0\nvendor_id\t: User Mode Linux\n..."
-
-      which crash-loops every five seconds and shows up much later as a
-      control plane that never became healthy.
-
-      bogomips is the only number UML offers and it is not a clock speed.
-      That is fine: nothing schedules on this value, it is reported as
-      node metadata and never compared against anything.
-    */
-    systemd.services.vivarium-k8s-cpuinfo = {
-      description = "Give /proc/cpuinfo a clock speed for cadvisor";
-      wantedBy = [ "multi-user.target" ];
-      before = [ "kubelet.service" ];
-      path = with pkgs; [
-        gawk
-        util-linux
-      ];
-      serviceConfig = {
-        Type = "oneshot";
-        RemainAfterExit = true;
-      };
-      # No sandboxing options, deliberately: the bind has to land in the
-      # machine's own mount namespace, where kubelet will read it.
-      script = ''
-        if grep -q '^cpu MHz' /proc/cpuinfo; then
-          echo "vivarium-k8s-cpuinfo: already has one, leaving it alone"
-          exit 0
-        fi
-        mhz=$(awk -F'[:[:space:]]+' '/^bogomips/ { print $2; exit }' /proc/cpuinfo)
-        # cadvisor's regex wants a decimal point and will not match without one.
-        case "$mhz" in
-          "")  mhz=1000.000 ;;
-          *.*) ;;
-          *)   mhz="$mhz.000" ;;
-        esac
-        awk -v mhz="$mhz" '{ print } /^processor/ { print "cpu MHz\t\t: " mhz }' \
-          /proc/cpuinfo > /run/cpuinfo
-        mount --bind /run/cpuinfo /proc/cpuinfo
-        echo "vivarium-k8s-cpuinfo: reporting $mhz MHz"
-      '';
-    };
-
     # kubeadm writes /var/lib/kubelet/config.yaml and kubeadm-flags.env,
     # so the unit does nothing until it has been run.  NixOS's own
     # services.kubernetes.kubelet is not this: it configures a node

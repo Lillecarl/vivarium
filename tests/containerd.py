@@ -48,7 +48,18 @@ TUNABLES = [
 ]
 
 
-def pod(name: str, network: int = NODE_NETWORK) -> dict:
+# A pod in a user namespace of its own, as `hostUsers: false` asks kubelet
+# for: container 0 is this host uid, for 65536 ids.
+USERNS = {
+    "userns_options": {
+        "mode": 0,
+        "uids": [{"host_id": 2_000_000_000, "container_id": 0, "length": 65536}],
+        "gids": [{"host_id": 2_000_000_000, "container_id": 0, "length": 65536}],
+    }
+}
+
+
+def pod(name: str, network: int = NODE_NETWORK, userns: bool = False) -> dict:
     return {
         "metadata": {"name": name, "namespace": "default", "uid": f"{name}-uid"},
         # A container's log_path is relative to this, and without it the
@@ -62,7 +73,9 @@ def pod(name: str, network: int = NODE_NETWORK) -> dict:
             # "slice:prefix:name".  Nothing here creates it -- system.slice
             # already exists.
             "cgroup_parent": "system.slice",
-            "security_context": {"namespace_options": {"network": network}},
+            "security_context": {
+                "namespace_options": {"network": network, **(USERNS if userns else {})}
+            },
         },
     }
 
@@ -101,11 +114,11 @@ async def test(vms: Machines) -> None:
     await node.wait_for_unit("vivarium-k8s-cri.target", timeout=300)
     await node.wait_for_unit("k8s-load-images.service", timeout=600)
 
-    # cadvisor refuses to start kubelet on a machine with no clock speed,
-    # and UML prints none.  Checked here rather than left to the cluster
-    # test, where it costs five minutes of kubeadm init to find out that
-    # kubelet has been crash-looping the whole time.
-    await node.wait_for_unit("vivarium-k8s-cpuinfo.service", timeout=120)
+    # cadvisor refuses to start kubelet on a machine with no clock speed.
+    # The UML kernel prints one (pkgs/uml-kernel/0002-um-report-cpu-mhz.patch).
+    # Checked here rather than left to the cluster test, where it costs
+    # five minutes of kubeadm init to find out that kubelet has been
+    # crash-looping the whole time.
     cpuinfo = await node.succeed("cat /proc/cpuinfo")
     speed = re.search(r"(?:cpu MHz|CPU MHz|clock)\s*:\s*([0-9]+\.[0-9]+)", cpuinfo)
     if not speed:
@@ -159,9 +172,7 @@ async def test(vms: Machines) -> None:
         )
     print(f"[test] all {len(entrypoints)} image entrypoints resolve", flush=True)
 
-    image = f"registry.k8s.io/kube-apiserver:v{version}"
     await node.succeed(f"mkdir -p {LOG_DIR}")
-    await write_json(node, "/tmp/container.json", container(image))
 
     # Asked of the runtime, so the script is the same on either backend
     # and either CRI. The CRI status lists the handlers since 1.30. The
@@ -172,22 +183,32 @@ async def test(vms: Machines) -> None:
     print(f"[test] the runtime offers {', '.join(handlers)}", flush=True)
     for handler in handlers:
         await probe(node, handler, version)
+    await probe(node, "runc", version, userns=True)
 
 
-async def probe(node: Machine, handler: str, version: str) -> None:
-    """Run the store probe under one containerd runtime handler."""
+async def probe(node: Machine, handler: str, version: str, userns: bool = False) -> None:
+    """Run the store probe under one containerd runtime handler.
+
+    *userns* runs it in a user namespace of its own. The runtime then
+    mounts a new procfs there, which the kernel refuses while anything
+    covers part of the host's /proc (`mount_too_revealing`)."""
     network = NODE_NETWORK
-    if handler in VM_HANDLERS:
+    if handler in VM_HANDLERS or userns:
         await node.succeed(f"vivarium-k8s-cni {POD_CIDR}")
         network = POD_NETWORK
-    await write_json(node, f"/tmp/pod-{handler}.json", pod(f"probe-{handler}", network))
+    name = f"{handler}-userns" if userns else handler
+    await write_json(node, f"/tmp/pod-{name}.json", pod(f"probe-{name}", network, userns))
+    spec = container(f"registry.k8s.io/kube-apiserver:v{version}")
+    if userns:
+        spec["linux"] = {"security_context": {"namespace_options": USERNS}}
+    await write_json(node, f"/tmp/container-{name}.json", spec)
 
     # --no-pull, because there is nothing to pull from: if the image is
     # not already here the test should say so rather than time out on a
     # registry it cannot reach.
     out = await node.succeed(
         f"crictl --timeout 5m run --no-pull --runtime {handler}"
-        f" /tmp/container.json /tmp/pod-{handler}.json",
+        f" /tmp/container-{name}.json /tmp/pod-{name}.json",
         timeout=400,
     )
     container_id = out.split()[-1]
@@ -209,5 +230,10 @@ async def probe(node: Machine, handler: str, version: str) -> None:
             f"--- logs ---\n{logs}\n"
             f"--- status ---\n{json.dumps(status.get('status', {}), indent=2)}"
         )
-    print(f"[test] {handler}: a container of symlinks exec'd out of /nix/store: {logs.strip()}")
+    if userns:
+        spec = json.loads(await node.succeed(f"crictl inspect {container_id}"))
+        maps = spec["info"]["runtimeSpec"]["linux"].get("uidMappings")
+        if not maps:
+            raise MachineError(f"[{node.name}] the userns probe ran with no uid mapping")
+    print(f"[test] {name}: a container of symlinks exec'd out of /nix/store: {logs.strip()}")
 

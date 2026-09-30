@@ -313,6 +313,10 @@ in
       name = "um-return-free-pages-to-the-host";
       patch = ./0001-um-return-free-pages-to-the-host.patch;
     }
+    {
+      name = "um-report-cpu-mhz";
+      patch = ./0002-um-report-cpu-mhz.patch;
+    }
   ];
   kernelArch = "um";
   target = "linux";

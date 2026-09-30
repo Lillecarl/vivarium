@@ -1,0 +1,24 @@
+From: vivarium <https://github.com/Lillecarl/vivarium>
+Subject: [PATCH] um: report a cpu MHz line in /proc/cpuinfo
+
+cadvisor, which kubelet embeds, reads the clock speed from cpufreq or
+from a "cpu MHz" line in /proc/cpuinfo, and kubelet does not start
+without one. UML has neither. The value is bogomips, the only number
+UML has; nothing schedules on it.
+
+The alternative, a file bind-mounted over /proc/cpuinfo, covers part of
+/proc. The kernel then refuses a new procfs mount in a user namespace
+(mount_too_revealing), so no pod with hostUsers: false can start.
+
+--- a/arch/um/kernel/um_arch.c	2026-09-30 22:17:12.097720938 +0200
++++ b/arch/um/kernel/um_arch.c	2026-09-30 22:17:17.278754149 +0200
+@@ -83,6 +83,9 @@
+ 	seq_printf(m, "model name\t: UML\n");
+ 	seq_printf(m, "mode\t\t: skas\n");
+ 	seq_printf(m, "host\t\t: %s\n", host_info);
++	seq_printf(m, "cpu MHz\t\t: %lu.%02lu\n",
++		   loops_per_jiffy/(500000/HZ),
++		   (loops_per_jiffy/(5000/HZ)) % 100);
+ 	seq_printf(m, "fpu\t\t: %s\n", str_yes_no(cpu_has(&boot_cpu_data, X86_FEATURE_FPU)));
+ 	seq_printf(m, "flags\t\t:");
+ 	for (i = 0; i < 32*NCAPINTS; i++)
