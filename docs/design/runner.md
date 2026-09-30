@@ -74,7 +74,8 @@ The long record up to 2026-09-30 is `history/running-anywhere.md`.
   the database lists exactly the paths the view holds.
 - **Guests talk to each other on `vec1`**: socketpairs, and a hub in the
   runner for three or more. It needs no namespace and no passt
-  (`lan.stubBlocked`).
+  (`lan.stubBlocked`). UML, QEMU and container guests mix in one run
+  and reach each other over IP by name (`backends`).
 - **The run's own user namespace maps root and, when the host has
   them, the caller's subordinate ids.** Container guests need those ids
   (`newuidmap`), and nothing else does. A run with a container guest on
