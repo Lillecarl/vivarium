@@ -66,6 +66,12 @@ The long record up to 2026-09-30 is `history/running-anywhere.md`.
   Without it a guest sees the host's whole store (`uplink.counted`:
   92699 entries; `uplink.countedView`: 510, and a path outside the
   closure is hidden).
+- **A guest's store is writable, and its Nix knows it.** The view is the
+  read-only lower layer of the guest's `/nix` overlay; new paths go to
+  the upper layer, so the guest's daemon builds and copies as usual. The
+  image's Nix database and the view come from one closureInfo
+  (`umlNixRegistration`: the system plus `nixDatabase.extraRoots`), so
+  the database lists exactly the paths the view holds.
 - **Guests talk to each other on `vec1`**: socketpairs, and a hub in the
   runner for three or more. It needs no namespace and no passt
   (`lan.stubBlocked`).
