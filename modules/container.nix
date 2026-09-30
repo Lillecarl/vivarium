@@ -40,6 +40,13 @@ lib.mkIf (cfg.backend == "container") {
   # remove a variable, only replace it.
   environment.variables.NIX_REMOTE = lib.mkForce "auto";
 
+  # The store reads as uid 65534 in a rootless container, and ssh refuses
+  # an included config file owned by neither root nor the user running it.
+  # NixOS includes this one from systemd's store path, so every user's ssh
+  # failed. It only adds `unix/*`, `vsock/*`, `machine/*` and `.host`,
+  # which a guest does not reach through ssh.
+  programs.ssh.systemd-ssh-proxy.enable = false;
+
   # A container cannot mount these, and systemd reports the failure as a
   # degraded system (measured).
   systemd.suppressedSystemUnits = [

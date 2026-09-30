@@ -43,6 +43,15 @@ async def test(vms: Machines) -> None:
         raise AssertionError(f"a login shell has NIX_REMOTE={remote!r}, expected 'auto'")
     print("[test] NIX_REMOTE is auto, as on the other backends")
 
+    # A user's ssh reads the system config, and refuses an included file
+    # owned by neither root nor that user. The store reads as uid 65534 in
+    # a rootless container, so nothing it includes may come from the store.
+    # Not `nobody`: 65534 is nobody, the one user the store belongs to.
+    rc, out = await one.execute("runuser -u sshd -- ssh -G localhost >/dev/null")
+    if rc != 0:
+        raise AssertionError(f"a user's ssh refuses the system config:\n{out}")
+    print("[test] a user's ssh reads the system config")
+
     # What the host pays, as for the other backends: the processes' PSS,
     # since a container has no memory file.
     kib = one.host_memory_kib()
