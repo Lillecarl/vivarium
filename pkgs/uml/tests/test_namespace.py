@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from uml.namespace import SUBORDINATE_IDS, _subordinate, describe, unshare_argv
+from uml.namespace import SUBORDINATE_IDS, _subordinate, describe, unshare_argv, user_argv
 
 
 def test_a_user_becomes_root_of_a_new_user_namespace() -> None:
@@ -37,3 +37,8 @@ def test_a_missing_file_is_no_ids(tmp_path: Path) -> None:
 def test_describe_names_root_and_counts_ids() -> None:
     text = "         0       1000          1\n         1     100000      65536\n"
     assert describe(text) == "namespace: root is uid 1000 outside; 65537 ids mapped"
+
+
+def test_the_removal_maps_the_same_ids_without_a_mount_namespace() -> None:
+    assert user_argv("/u", subordinate=True) == ["/u", "--user", "--map-root-user", "--map-auto"]
+    assert unshare_argv("/u", root=False, subordinate=True)[:4] == user_argv("/u", subordinate=True)

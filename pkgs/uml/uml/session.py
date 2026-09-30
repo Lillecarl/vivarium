@@ -171,6 +171,8 @@ class Session:
             phase.name: PhaseState.PENDING for phase in spec.phases
         }
         self.errors: dict[str, str] = {}
+        self.stopped_by: int | None = None
+        """The signal that ended the run early, if one did."""
         # Which phase holds each guest, so a command or a journal entry
         # carries the phase it belonged to. By guest because two phases
         # on disjoint guests run at once, and a guest is only ever held by

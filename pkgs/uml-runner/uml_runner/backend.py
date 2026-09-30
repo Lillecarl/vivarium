@@ -92,6 +92,17 @@ ARTIFACTS_ENV = "UML_ARTIFACTS"
 host-side ``UML_TEST_ARTIFACTS``: that one names the root of a run, this
 one names one guest's subdirectory of it."""
 
+RUN_ROOT_ENV = "UML_RUN_ROOT"
+"""A short directory `uml run` removes however it ends; see
+`uml/runroot.py`."""
+
+
+def short_tmp() -> str:
+    """Where a socket path short enough for `sockaddr_un` goes: the run
+    root when there is one, which is cleaned up; else /tmp."""
+    return os.environ.get(RUN_ROOT_ENV) or "/tmp"
+
+
 STORE_ENV = "UML_STORE"
 """What the UML guest's /init mounts as its /nix: the guest's store view,
 or the host's /nix when it has none."""
@@ -219,7 +230,7 @@ def socket_dir(rundir: Path, name: str, fallback: str | None) -> tuple[Path, lis
     """
     if len(str(rundir / name).encode()) < mconsole.UNIX_PATH_MAX:
         return rundir, []
-    made = Path(tempfile.mkdtemp(prefix="uml-", dir=fallback or "/tmp"))
+    made = Path(tempfile.mkdtemp(prefix="uml-", dir=fallback or short_tmp()))
     return made, [made]
 
 

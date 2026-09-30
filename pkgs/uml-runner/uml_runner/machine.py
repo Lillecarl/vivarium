@@ -42,6 +42,9 @@ from . import storeview
 _ANSI = re.compile(r"\x1b\[[0-9;]*[a-zA-Z]")
 _CONSOLE_HISTORY = 2000
 
+POWEROFF_GRACE = 20
+"""Seconds a guest has to power itself off before the runner signals it."""
+
 _SYSTEMD_TIMEOUT = 60
 """How long to wait for one `systemctl` round trip.  The agent gives the
 command itself 30s, so anything past this is the guest, not systemd."""
@@ -369,7 +372,11 @@ class Machine:
         """Ask the guest to power off, then make sure nothing is left."""
         # `alive` first: a dead guest's agent does not refuse, it hangs,
         # and the request below waited out its full timeout after `crash`.
+        asked = False
         if self._conn is not None and not self._conn.closed and self.alive():
+            # Asked even when the reply is lost: poweroff can take the
+            # agent down before it answers.
+            asked = True
             try:
                 await asyncio.wait_for(self.execute("systemctl poweroff"), timeout=15)
             except (MachineError, OSError, EOFError, asyncio.TimeoutError):
@@ -382,7 +389,7 @@ class Machine:
                 sock.close()
         self._agent_sock = self._guest_sock = None
 
-        await self._reap()
+        await self._reap(POWEROFF_GRACE if asked else 0)
 
         # virtiofsd and passt, where the backend started them itself.
         # Under UML they are children of the bridge and went with it.
@@ -420,16 +427,28 @@ class Machine:
 
         if self._rundir is not None:
             storeview.remove(self._rundir / "nix")
-            shutil.rmtree(self._rundir, ignore_errors=True)
+            if not os.environ.get("UML_KEEP"):
+                shutil.rmtree(self._rundir, ignore_errors=True)
             self._rundir = None
 
-    async def _reap(self) -> None:
+    async def _reap(self, grace: float) -> None:
+        """Wait *grace* seconds for the guest to exit, then SIGTERM its
+        process group, then SIGKILL it."""
         if self._process is None or self._process.returncode is not None:
             return
-        for sig, grace in ((signal.SIGTERM, 30), (signal.SIGKILL, 5)):
-            self._signal(sig)
+        # `systemctl poweroff` returns once the shutdown is queued, so a
+        # guest that was asked gets the time to finish it: measured, a
+        # QEMU guest was SIGTERMed right after the request.
+        if grace:
             try:
                 await asyncio.wait_for(self._process.wait(), timeout=grace)
+                return
+            except asyncio.TimeoutError:
+                pass
+        for sig, wait in ((signal.SIGTERM, 30), (signal.SIGKILL, 5)):
+            self._signal(sig)
+            try:
+                await asyncio.wait_for(self._process.wait(), timeout=wait)
                 return
             except asyncio.TimeoutError:
                 continue

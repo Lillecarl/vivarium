@@ -15,7 +15,9 @@ was documented and rejected.
 from __future__ import annotations
 
 import argparse
+import os
 import shlex
+import signal
 import sys
 from collections.abc import Collection
 from pathlib import Path
@@ -24,7 +26,7 @@ from pathlib import Path
 import anyio
 from uml_runner import MachineError
 
-from . import monitor, namespace
+from . import monitor, namespace, runroot
 from .control import SOCKET, Controller, Op, request
 from .events import Kind, Level
 from .phases import PhaseState, launchable, ready, summarise
@@ -108,6 +110,11 @@ def parse(argv: list[str] | None = None) -> argparse.Namespace:
             "give the guests no way off this host, the way a sandboxed"
             " check has none"
         ),
+    )
+    run.add_argument(
+        "--keep",
+        action="store_true",
+        help="remove nothing at the end: guest disks, sockets, the run directory",
     )
     run.add_argument(
         "--verbose",
@@ -255,18 +262,35 @@ async def run(args: argparse.Namespace) -> int:
         raise SessionError(f"no such phase to break before: {', '.join(sorted(unknown))}")
 
     try:
-        await drive(
-            session,
-            breaks=args.breaks,
-            break_on_failure=args.break_on_failure,
-            serial=args.serial,
-        )
+        async with anyio.create_task_group() as group:
+            group.start_soon(_stop_on_signal, session, group.cancel_scope)
+            await drive(
+                session,
+                breaks=args.breaks,
+                break_on_failure=args.break_on_failure,
+                serial=args.serial,
+            )
+            group.cancel_scope.cancel()
+        if session.stopped_by is not None:
+            return 128 + session.stopped_by
         for line in session.report.summary().splitlines():
             session.emit(Kind.NOTE, line.removeprefix("[time] "))
         session.emit(Kind.NOTE, summarise(session.state))
         return 0 if session.passed else 1
     finally:
         sink.close()
+
+
+async def _stop_on_signal(session: Session, scope: anyio.CancelScope) -> None:
+    """SIGTERM or SIGHUP ends the run the way ^C does: the drive is
+    cancelled, and its shielded teardown powers each guest off, then
+    signals each guest's process group, SIGTERM and then SIGKILL."""
+    with anyio.open_signal_receiver(signal.SIGTERM, signal.SIGHUP) as signals:
+        async for received in signals:
+            session.stopped_by = int(received)
+            session.emit(Kind.NOTE, f"{signal.Signals(received).name}: tearing the guests down")
+            scope.cancel()
+            return
 
 
 async def drive(
@@ -457,10 +481,15 @@ def main(argv: list[str] | None = None) -> None:
     try:
         if args.command == "phases":
             raise SystemExit(anyio.run(phases, args))
+        if args.keep:
+            os.environ[runroot.KEEP] = "1"
         # First, before anything boots or any thread starts.
         namespace.enter(Spec.read(args.spec).unshare)
         args.out.mkdir(parents=True, exist_ok=True)
-        raise SystemExit(anyio.run(run, args))
+        try:
+            raise SystemExit(anyio.run(run, args))
+        finally:
+            runroot.remove_own()
     except KeyboardInterrupt:
         raise SystemExit(130) from None
     except (SessionError, SpecError, namespace.NamespaceError) as error:

@@ -23,7 +23,10 @@ import resource
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
+
+from . import runroot
 
 ENTERED = "UML_NAMESPACE"
 """Set in the re-executed runner, so it does not enter a second time."""
@@ -63,13 +66,19 @@ def has_subordinate_ids(user: str, uid: int, root: Path = Path("/")) -> bool:
     ) and all(shutil.which(tool) for tool in ("newuidmap", "newgidmap"))
 
 
+def user_argv(unshare: str, *, subordinate: bool) -> list[str]:
+    """`unshare` as root of a new user namespace, with the caller's
+    subordinate ids when it has them."""
+    auto = ["--map-auto"] if subordinate else []
+    return [unshare, "--user", "--map-root-user", *auto]
+
+
 def unshare_argv(unshare: str, *, root: bool, subordinate: bool) -> list[str]:
     """The `unshare` command line that puts the runner in its namespace."""
-    mount = ["--mount", "--propagation", "private"]
+    mount = ["--mount", "--propagation", "private", "--"]
     if root:
-        return [unshare, *mount, "--"]
-    auto = ["--map-auto"] if subordinate else []
-    return [unshare, "--user", "--map-root-user", *auto, *mount, "--"]
+        return [unshare, *mount]
+    return [*user_argv(unshare, subordinate=subordinate), *mount]
 
 
 def describe(uid_map: str) -> str:
@@ -121,10 +130,22 @@ def enter(unshare: Path | None) -> None:
         raise NamespaceError(f"this run needs a user namespace, and making one failed ({why}); {FIX}")
     raise_fd_limit()
     uid = os.getuid()
-    argv = unshare_argv(
-        str(unshare),
-        root=uid == 0,
-        subordinate=uid != 0 and has_subordinate_ids(pwd.getpwuid(uid).pw_name, uid),
-    )
+    subordinate = uid != 0 and has_subordinate_ids(pwd.getpwuid(uid).pw_name, uid)
+    shape = {"root": uid == 0, "subordinate": subordinate}
+
+    # The same mapping as the run, so the removal may delete what a
+    # container guest's subordinate ids own.
+    remove = [sys.executable, "-c", runroot.REMOVE]
+    if uid != 0:
+        remove = [*user_argv(str(unshare), subordinate=subordinate), "--", *remove]
+    where = runroot.base()
+    runroot.reap(where, remove)
+    root = Path(tempfile.mkdtemp(prefix=runroot.PREFIX, dir=where))
+    cleaner = runroot.spawn_cleaner(root, remove)
+    (root / runroot.OWNERS).write_text(runroot.owners(os.getpid(), cleaner))
+
     os.environ[ENTERED] = "1"
+    os.environ[runroot.ENV] = str(root)
+    os.environ["TMPDIR"] = str(root)
+    argv = unshare_argv(str(unshare), **shape)
     os.execv(argv[0], [*argv, sys.executable, *sys.orig_argv[1:]])

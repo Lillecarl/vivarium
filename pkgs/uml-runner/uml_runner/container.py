@@ -753,7 +753,7 @@ def main(argv: list[str] | None = None) -> int:
 
     # A short directory: a sockaddr_un holds 108 bytes, and a bundle under
     # a long TMPDIR does not fit.
-    sockets = Path(tempfile.mkdtemp(prefix="uml-crun-", dir="/tmp"))
+    sockets = Path(tempfile.mkdtemp(prefix="uml-crun-", dir=os.environ.get("UML_RUN_ROOT") or "/tmp"))
     console = sockets / "console"
     listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     listener.bind(str(console))
