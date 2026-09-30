@@ -51,10 +51,18 @@ The long record up to 2026-09-30 is `history/running-anywhere.md`.
   namespace), `inject` (a file's `test(vms)`), `pytest` and a declared
   phase, all from the working tree.
 
-## The function: a draft for review
+## The function
 
-Names are nixos-test's, from `nixos/lib/testing` in the pinned
-nixpkgs. Where this differs, the reason is on the line.
+Reviewed by Carl on 2026-09-30. Names are nixos-test's, from
+`nixos/lib/testing` in the pinned nixpkgs; where this differs, the
+reason is on the line. The outputs are a superset of nixos-test's: we
+add what is useful and do not limit ourselves to its set.
+
+**A compat function maps nixos-test specs onto this one**, literally,
+and lives apart from it. `testScript`, `containers`, `nodeDefaults` and
+the rest of nixos-test's shape are its inputs, never the main
+function's. The main function stays as clean as if nixos-test did not
+exist.
 
 Inputs, as module options:
 
@@ -62,10 +70,10 @@ Inputs, as module options:
 | --- | --- | --- |
 | `name` | same | same |
 | `nodes.<name>` | a NixOS module | same; the guest's backend is an option in it, `boot.uml.backend` |
-| `containers.<name>`, `nodeDefaults`, `containerDefaults` | nspawn containers apart from VMs | none: a container is a node with `backend = "container"`, so one set holds every guest and backends mix freely |
+| `containers.<name>`, `nodeDefaults`, `containerDefaults` | nspawn containers apart from VMs | none: a container is a node with `backend = "container"`, so one set holds every guest and backends mix freely. The compat function maps them |
 | `defaults` | a module every node imports | same (built) |
-| `testScript` | one Python script | kept, as a phase named `test` after `boot`; it is what a `mkTest` caller moves to |
-| `phases.<name>` | none | the ordered steps; `testScript` is one of them |
+| `testScript` | one Python script | none; the compat function maps it to one phase after `boot` |
+| `phases.<name>` | none | the ordered steps |
 | `extraPythonPackages` | Python the script imports | same, beside `pythonPath` for local modules |
 | `interactive` | a module merged in `driverInteractive` | same |
 | `globalTimeout`, `meta` | same | same |
@@ -78,20 +86,32 @@ Outputs:
 | --- | --- | --- |
 | the derivation | the sandboxed run | same; exits on the first failure |
 | `.driver` | the run by hand | same; exits on the first failure. Replaces `.run` |
-| `.driverInteractive` | by hand, into a Python REPL | by hand, paused on failure with the guests up; `exec`, `inject` and the MCP server reach in. Replaces `--break-on-failure` as the way to ask |
+| `.driverInteractive` | by hand, into a ptpython REPL with the test's symbols; nothing runs until asked | the same: the run pauses before the first phase and a REPL attaches to it, with `vms`, each guest and a way to run a phase or the rest |
+| `.driverDebug` (name open) | none | by hand, and pauses on the first failure with the guests up; the MCP server starts this one |
 | `.nodes`, `.config` | the evaluated guests and test | same (`.nodes` built) |
-| `.extend { modules; }` | the test with more modules | same; it replaces the `.uml` and `.qemu` variants, since the backend is an option |
+| `.extend { modules; }` | the test with more modules | same |
+| `.uml`, `.qemu`, `.container` | none | helpers over `.extend`: every node on that backend |
 | `.phases` | none | kept: the phases in order, without booting |
 
 Both drivers take the same flags at run time: `--break PHASE`,
 `--break-on-start`, `--only`, `--offline`. Nothing about a run's mode is
 set in Nix.
 
-Open in this draft:
+**Cleanup always happens**, unless a flag turns it off. However a run
+ends, success, failure, ^C or SIGKILL of the runner, it leaves no
+guest, helper, mount or run directory behind. A check proves the
+SIGKILL case. The run's mount namespace already takes every store
+view with it; the run directories can live on a tmpfs in that
+namespace, so they go with it too.
 
-- `.driver` or `.run`? nixos-test users know `.driver`; this
-  repository's users know `.run`.
-- `interactive`: worth building now, or when a test needs it?
+The MCP server drives this runner only. It knows nothing of
+nixos-test's driver; a nixos-test spec reaches it through the compat
+function.
+
+Open:
+
+- The name of the output that pauses on failure: `.driverDebug`?
+- `interactive`: build it now, or when a test needs it?
 
 ## Isolation
 
