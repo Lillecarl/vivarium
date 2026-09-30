@@ -271,6 +271,7 @@ let
           "stream"
           "pytest-phase"
           "breakpoint"
+          "live-exec"
           "guest-suites"
           "kernel-override"
           "parallel"

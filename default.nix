@@ -1020,6 +1020,23 @@ let
         touch $out
       '';
 
+    # Can `exec` reach a run that is not paused? tests/live-exec.py.
+    live-exec =
+      let
+        run = mkTest {
+          name = "live-exec";
+          nodes.one = { };
+          phases.live = {
+            script = ./tests/phases/live.py;
+            after = [ "boot" ];
+          };
+        };
+      in
+      pkgs.runCommand "vivarium-check-live-exec" { passthru.session = run; } ''
+        ${pkgs.python3.interpreter} ${./tests/live-exec.py} ${lib.getExe session} ${run.spec} "$TMPDIR"
+        touch $out
+      '';
+
     /*
       One guest of each backend on one segment, reaching each other over
       IP by name. `mixed` and `container-lan` each prove one pair; this
