@@ -34,6 +34,7 @@ import io
 import json
 import os
 import shlex
+import sys
 import traceback
 from dataclasses import asdict, dataclass
 from enum import StrEnum
@@ -198,6 +199,29 @@ async def _receive_line(stream: ByteStream) -> bytes:
 # ── the controller ──────────────────────────────────────────────────
 
 
+def commands(vivarium: str, out: Path) -> list[tuple[str, str]]:
+    """Each command line that reaches the run in `out`, with what it does.
+
+    The run prints them, so an agent that reads the run's output can copy
+    one as it is: absolute paths, no PATH, no knowledge of vivarium."""
+    ctl = [vivarium, "ctl", "--out", str(out)]
+    return [
+        ("wait for a pause or the verdict (exits 4 at a pause)",
+         shlex.join([vivarium, "monitor", str(out), "--quiet", "--until-pause"])),
+        ("run Python against the guests", shlex.join([*ctl, "exec", "print(list(vms))"])),
+        ("run a file's `async def test(vms)`", shlex.join([*ctl, "inject", "./check.py"])),
+        ("each phase's state", shlex.join([*ctl, "state"])),
+        ("resume a paused run", shlex.join([*ctl, "continue"])),
+    ]
+
+
+def vivarium_command(session: Session) -> str:
+    """The `vivarium` executable of this run."""
+    if session.spec.vivarium is not None:
+        return str(session.spec.vivarium / "bin" / "vivarium")
+    return str(Path(sys.argv[0]).resolve())
+
+
 class Controller:
     """Serves the socket for a whole drive; pauses when told to.
 
@@ -252,16 +276,24 @@ class Controller:
         self._bind_guests()
         self.session.emit(
             Kind.NOTE,
-            f"paused {reason}; `vivarium ctl --out {self.session.out} continue` resumes",
+            f"paused {reason}; the guests stay up until the run is resumed",
             level=Level.ERROR,
             reason=reason,
             socket=str(self.path),
         )
+        # At the pause's level, so `--quiet` shows them when they matter.
+        self.announce(Level.ERROR)
         try:
             await self._resume.wait()
         finally:
             self._resume = None
         self.session.emit(Kind.NOTE, f"resumed, paused {reason}", resumed=reason)
+
+    def announce(self, level: Level = Level.INFO) -> None:
+        """The command lines that reach this run, one event each."""
+        out = self.session.out.resolve()
+        for what, line in commands(vivarium_command(self.session), out):
+            self.session.emit(Kind.NOTE, f"{what}: {line}", level=level, command=what)
 
     def _bind_guests(self) -> None:
         """`vms` and each guest by name, once the guests exist."""

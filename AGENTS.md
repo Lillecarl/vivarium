@@ -139,8 +139,16 @@ and exits with the verdict: 0 passed, 1 failed, 2 exited without one,
 3 the stream ended first. After the replay the server sends `{"event":
 "live"}`, unprinted: a replayed pause counts for `--until-pause` only if
 no `resumed` follows it, and `resume` replies only once `resumed` is in
-the backlog. `vivarium ctl continue` does not wait: re-arm after the MCP
-`resume` reply, not after it. `vivarium/monitor.py` is the client. `nix build
+the backlog; `vivarium ctl continue` waits the same way, by polling
+`state`. With no `monitor.sock` (a run no vivarium-mcp started) or a dead
+one, the monitor follows `events.jsonl` through the same `channel_event`;
+the run is up while `control.sock` exists, and a run gone with no verdict
+exits 2. `vivarium/monitor.py` is the client.
+
+Every run with a control socket prints `commands()` (`control.py`): the
+monitor, `exec`, `inject`, `state` and `continue` lines, absolute, at
+start and again at each pause at the pause's level. `nix build --file .
+copy-commands` runs each one copied from run.log. `nix build
 --file . mcp-check` drives the server over raw JSON-RPC against a guest,
 and checks a monitor prints exactly the channel's events.
 

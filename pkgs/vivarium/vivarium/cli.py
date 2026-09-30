@@ -360,6 +360,7 @@ async def drive(
         group.start_soon(session.follow)
         if controller is not None:
             await group.start(controller.serve)
+            controller.announce()
             if interactive:
                 group.start_soon(repl.serve, controller)
         try:

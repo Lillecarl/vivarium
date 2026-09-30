@@ -1,10 +1,12 @@
 """Breakpoints and injected Python, without a guest."""
 
 import ast
+import shlex
+from pathlib import Path
 
 import pytest
 
-from vivarium.control import Console, Op, parse_request, split_last_expression
+from vivarium.control import Console, Op, commands, parse_request, split_last_expression
 
 
 class TestSplitLastExpression:
@@ -78,3 +80,14 @@ class TestConsole:
         reply = await Console({}).execute("def (")
         assert not reply.ok
         assert "SyntaxError" in (reply.error or "")
+
+
+def test_each_printed_command_reaches_the_run_it_names():
+    out = Path("/tmp/a run")
+    lines = dict(commands("/nix/store/x-vivarium/bin/vivarium", out))
+    argvs = [shlex.split(line) for line in lines.values()]
+    assert all(argv[0] == "/nix/store/x-vivarium/bin/vivarium" for argv in argvs)
+    assert all(str(out) in argv for argv in argvs)
+    watch = next(argv for argv in argvs if argv[1] == "monitor")
+    assert watch[2:] == [str(out), "--quiet", "--until-pause"]
+    assert {argv[4] for argv in argvs if argv[1] == "ctl"} == {"exec", "inject", "state", "continue"}
