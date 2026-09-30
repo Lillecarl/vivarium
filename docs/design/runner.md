@@ -164,9 +164,16 @@ a test.
   and reach each other over IP by name (`backends`).
 - **The run's own user namespace maps root and, when the host has
   them, the caller's subordinate ids.** Container guests need those ids
-  (`newuidmap`), and nothing else does. A run with a container guest on
-  a host without subordinate ids, a delegated cgroup or a writable
-  `/dev/net/tun` fails at start and names what is missing.
+  (`newuidmap`), and QEMU guests need them for `/artifacts`. A run with
+  a container guest on a host without subordinate ids, a delegated
+  cgroup or a writable `/dev/net/tun` fails at start and names what is
+  missing.
+- **A sandboxed run with a QEMU guest asks for `uid-range`** (Carl,
+  2026-09-30), as a container guest does. virtiofsd serves a file as the
+  guest user that made it; in a sandbox that maps one uid it cannot
+  become uid 1000, and a guest's non-root write to `/artifacts` fails
+  with EINVAL (`artifacts.qemu`). Each guest's `/artifacts` is mode 1777,
+  so a UML guest, whose hostfs writes as the runner, needs nothing more.
 - **The runner raises its open-file soft limit** to the hard limit at
   start. UML fails at 1024 (EMFILE), which many shells and every
   `systemd-run --user` unit have.

@@ -9,7 +9,8 @@ let
   # A job that boots a guest needs the user namespace, whether the guest is
   # a UML process inside the Nix sandbox or a QEMU machine outside it: the
   # sandbox unshares one, and so does passt. A QEMU guest needs /dev/kvm on
-  # top.
+  # top, and `uid-range`: virtiofsd serves a guest user's file as that
+  # user, which a sandbox mapping one uid cannot (see `featuresFor`).
   #
   # `mkMerge` and not `//`, which is shallow: an addition under `nix` would
   # otherwise replace the whole install block and take the cache with it.
@@ -20,7 +21,10 @@ let
 
   guestBootstrap = lib.mkMerge [
     sandboxBootstrap
-    { openKvm.enable = true; }
+    {
+      openKvm.enable = true;
+      nix.install.uidRange = true;
+    }
   ];
 
   /*

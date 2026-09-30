@@ -192,15 +192,20 @@ rec {
     A QEMU guest is only worth booting with KVM, and the daemon only hands
     /dev/kvm to a derivation that asks for it. A container needs the
     `uid-range` feature: 65536 ids and a cgroup of its own, which a plain
-    sandbox build does not have (measured, see Area 8 of the design). UML
-    asks for nothing, which is the whole point of UML.
+    sandbox build does not have (measured, see Area 8 of the design).
+
+    QEMU needs `uid-range` too. virtiofsd serves a file as the guest user
+    that made it, and in a sandbox that maps one uid it cannot become
+    uid 1000 (EINVAL, measured: `artifacts.qemu`). UML asks for nothing,
+    which is the whole point of UML.
   */
   featuresFor =
     machines:
     let
       any = backend: lib.any (machine: machine.vivarium.backend == backend) machines;
     in
-    lib.optional (any "qemu") "kvm" ++ lib.optional (any "container") "uid-range";
+    lib.optional (any "qemu") "kvm"
+    ++ lib.optional (any "qemu" || any "container") "uid-range";
 
   /**
     Whether this sandbox can run a container guest, answered in seconds.

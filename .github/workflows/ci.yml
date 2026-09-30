@@ -125,9 +125,12 @@ jobs:
         with:
           extra_nix_config: |
             access-tokens = github.com=${{ github.token }}
+            auto-allocate-uids = true
             cores = 4
-            experimental-features = nix-command flakes
+            experimental-features = nix-command flakes auto-allocate-uids cgroups
+            extra-system-features = uid-range
             max-jobs = 1
+            use-cgroups = true
       - timeout-minutes: 15
         uses: cachix/cachix-action@master
         with:
@@ -208,9 +211,12 @@ jobs:
         with:
           extra_nix_config: |
             access-tokens = github.com=${{ github.token }}
+            auto-allocate-uids = true
             cores = 4
-            experimental-features = nix-command flakes
+            experimental-features = nix-command flakes auto-allocate-uids cgroups
+            extra-system-features = uid-range
             max-jobs = 1
+            use-cgroups = true
       - timeout-minutes: 15
         uses: cachix/cachix-action@master
         with:
@@ -247,9 +253,12 @@ jobs:
         with:
           extra_nix_config: |
             access-tokens = github.com=${{ github.token }}
+            auto-allocate-uids = true
             cores = 4
-            experimental-features = nix-command flakes
+            experimental-features = nix-command flakes auto-allocate-uids cgroups
+            extra-system-features = uid-range
             max-jobs = 1
+            use-cgroups = true
       - timeout-minutes: 15
         uses: cachix/cachix-action@master
         with:
@@ -286,9 +295,12 @@ jobs:
         with:
           extra_nix_config: |
             access-tokens = github.com=${{ github.token }}
+            auto-allocate-uids = true
             cores = 4
-            experimental-features = nix-command flakes
+            experimental-features = nix-command flakes auto-allocate-uids cgroups
+            extra-system-features = uid-range
             max-jobs = 1
+            use-cgroups = true
       - timeout-minutes: 15
         uses: cachix/cachix-action@master
         with:
@@ -325,9 +337,12 @@ jobs:
         with:
           extra_nix_config: |
             access-tokens = github.com=${{ github.token }}
+            auto-allocate-uids = true
             cores = 4
-            experimental-features = nix-command flakes
+            experimental-features = nix-command flakes auto-allocate-uids cgroups
+            extra-system-features = uid-range
             max-jobs = 1
+            use-cgroups = true
       - timeout-minutes: 15
         uses: cachix/cachix-action@master
         with:
@@ -365,9 +380,12 @@ jobs:
         with:
           extra_nix_config: |
             access-tokens = github.com=${{ github.token }}
+            auto-allocate-uids = true
             cores = 4
-            experimental-features = nix-command flakes
+            experimental-features = nix-command flakes auto-allocate-uids cgroups
+            extra-system-features = uid-range
             max-jobs = 1
+            use-cgroups = true
       - timeout-minutes: 15
         uses: cachix/cachix-action@master
         with:
@@ -405,9 +423,12 @@ jobs:
         with:
           extra_nix_config: |
             access-tokens = github.com=${{ github.token }}
+            auto-allocate-uids = true
             cores = 4
-            experimental-features = nix-command flakes
+            experimental-features = nix-command flakes auto-allocate-uids cgroups
+            extra-system-features = uid-range
             max-jobs = 1
+            use-cgroups = true
       - timeout-minutes: 15
         uses: cachix/cachix-action@master
         with:
