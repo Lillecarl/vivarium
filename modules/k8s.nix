@@ -983,10 +983,8 @@ in
       after = [
         "vivarium-k8s-cri.target"
         "k8s-load-images.service"
-        "vivarium-k8s-cpuinfo.service"
       ];
       wants = [ "vivarium-k8s-cri.target" ];
-      requires = [ "vivarium-k8s-cpuinfo.service" ];
       unitConfig.ConditionPathExists = "/var/lib/kubelet/config.yaml";
       path = with pkgs; [
         util-linux
