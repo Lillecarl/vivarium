@@ -1320,6 +1320,45 @@
 20 Open: is the store view an output of its own, beside sandboxed and
 20 unsandboxed (Carl's reading), or a level-1 feature that an unsandboxed
 20 run turns on when it detects a user namespace?
+21
+21 ### Round 21: passt makes a sandboxed run need a user namespace
+21
+21 Carl wants to send sandboxed runs to remote builders. A builder can be
+21 a host that forbids unprivileged user namespaces. Nix still sandboxes
+21 there, because its daemon is root. But passt runs as the build user
+21 and must make a namespace of its own.
+21
+21 Measured with `uplink.sandboxed` and `uplink.sandboxedNoUserns`. The
+21 second runs the same build inside `bwrap --disable-userns`, and a probe
+21 in the build proves that the block took ("No space left on device"):
+21
+21 | sandboxed run | nested user namespace | result |
+21 | --- | --- | --- |
+21 | `uplink.sandboxed` | allowed, as on dynhetz | passes; no route out |
+21 | `uplink.sandboxedNoUserns` | refused | fails: "passt exited (1); the guest has no uplink" |
+21
+21 So a sandboxed run works only on a builder that allows unprivileged
+21 user namespaces. No system feature says so: `featuresFor` asks for
+21 `kvm` and `uid-range`, never for this. A builder without it takes the
+21 job and fails after the guests start.
+21
+21 In a sandbox, passt gives three things and none is essential:
+21
+21 1. Forwards from the host into a guest. nixkube's CI test runs
+21    `kubectl` on the host through a forward of 6443.
+21 2. A default route, DHCP and a DNS server on `vec0`, all leading
+21    nowhere.
+21 3. A guest that has the same interfaces in every run.
+21
+21 `vec1` does not need passt. It carries frames between UML, QEMU and
+21 container guests (`mixed`, `container-lan`), and it works with user
+21 namespaces refused (`lan.stubBlocked`).
+21
+21 Proposed: passt only for the uplink, that is, only in an online run.
+21 Forwards go through a channel that the runner owns, and `vec1` or the
+21 guest configuration gives the default route. A sandboxed run then
+21 needs nothing from a builder beyond Nix's own sandbox. An offline run
+21 needs a user namespace only for the store view.
 18
 1 ## What "any machine" means
 1
