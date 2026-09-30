@@ -65,7 +65,7 @@ and lives apart from it. `testScript`, `containers`, `nodeDefaults` and
 the rest of nixos-test's shape are its inputs, never the main
 function's. The main function stays as clean as if nixos-test did not
 exist. Built: `fromNixosTest` (`nixos-test.nix`) with nixos-test's
-script API in `uml_runner/nixos_test.py`. `nixos-tests` runs
+script API in `vivarium_runner/nixos_test.py`. `nixos-tests` runs
 nixpkgs' simple-vm, systemd-no-tainted and oh-my-zsh sandboxed, and
 simple-container by hand (it needs `/dev/net/tun`).
 
@@ -78,7 +78,7 @@ Inputs, as module options:
 | option | nixos-test | here |
 | --- | --- | --- |
 | `name` | same | same |
-| `nodes.<name>` | a NixOS module | same; the guest's backend is an option in it, `boot.uml.backend` |
+| `nodes.<name>` | a NixOS module | same; the guest's backend is an option in it, `vivarium.backend` |
 | `containers.<name>`, `nodeDefaults`, `containerDefaults` | nspawn containers apart from VMs | none: a container is a node with `backend = "container"`, so one set holds every guest and backends mix freely. The compat function maps them |
 | `defaults` | a module every node imports | same (built) |
 | `testScript` | one Python script | none; the compat function maps it to one phase after `boot` |
@@ -143,7 +143,7 @@ a test.
 - **Each guest sees only its own closure** in `/nix/store`, in every
   run. The runner builds a view per guest: a tmpfs with one read-only
   bind per path, read-only as a whole through `mount_setattr`
-  (`uml_runner/storeview.py`). The closure is the closureInfo the
+  (`vivarium_runner/storeview.py`). The closure is the closureInfo the
   guest's Nix database is loaded from (`umlNixRegistration`), so the
   database lists exactly what the view holds. virtiofsd serves a QEMU
   guest's view, and a UML guest's `/init` mounts it from `UML_STORE` on
@@ -173,11 +173,11 @@ a test.
 
 ## Agent experience
 
-- `uml monitor` gets a quiet mode that prints only `paused`, `failed`,
+- `vivarium monitor` gets a quiet mode that prints only `paused`, `failed`,
   `finished` and `exited`.
 - An "evaluated" signal tells an agent when it can edit the working copy
   again. The part that runs the evaluation sends it (MCP `start`,
-  `uml-eval run`), because `events.jsonl` does not exist yet then.
+  `vivarium-eval run`), because `events.jsonl` does not exist yet then.
 
 ## Open
 
@@ -241,7 +241,8 @@ a test.
    | `pkgs/uml-runner`, `uml_runner` | `pkgs/vivarium-runner`, `vivarium_runner` |
    | `pkgs/uml-eval`, `uml_eval`, `uml-eval` | `pkgs/vivarium-eval`, `vivarium_eval`, `vivarium-eval` |
    | MCP command `uml-mcp`, server `uml` | `vivarium-mcp`, `vivarium` |
-   | options `boot.uml.*` | `vivarium.*` |
+   | options `boot.uml.*`, `uml.recipes.*` | `vivarium.*`, `vivarium.recipes.*` |
+   | `services.uml-k8s`, its `uml-k8s-*` units and commands | `services.vivarium-k8s`, `vivarium-k8s-*` |
    | `UML_*` runner variables | `VIVARIUM_*` |
    | `uml-agent`, `uml-journal` units | `vivarium-agent`, `vivarium-journal` |
    | `system.build.umlRootImage`, `umlNixDatabase`, `umlNixRegistration`, `umlRunner`, `umlRunnerPackage` | `vivarium…` |
@@ -249,5 +250,6 @@ a test.
 
    Unchanged: the backend value `"uml"` and the `.uml` output,
    `pkgs/uml-kernel` and `umlKernel`, `pkgs/uml-passt-bridge` and
-   `umlPasstBridge`, and the kernel's `CONFIG_UML_*` symbols.
+   `umlPasstBridge`, the UML `/init` (`uml-init`), and the kernel's
+   `CONFIG_UML_*` symbols.
 2. The agent-experience items.

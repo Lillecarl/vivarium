@@ -51,14 +51,14 @@ and a store path each time, and a guest change is a new image. Pause and
 send Python in:
 
 ```sh
-vivarium-run-mine --out ./o --break check &        # or --break-on-failure
-uml ctl --out ./o state
-uml ctl --out ./o exec 'await one.succeed("systemctl --failed")'
-uml ctl --out ./o exec - < snippet.py         # top-level await; names persist
-uml ctl --out ./o inject ./scratch.py         # a file's test(vms), from the working tree
-uml ctl --out ./o pytest ./tests/chaos -- -k etcd   # pytest from the working tree
-uml ctl --out ./o run check                   # a declared phase
-uml ctl --out ./o continue
+nix run --file . mine.driver -- --out ./o --break check &   # or mine.driverDebug
+vivarium ctl --out ./o state
+vivarium ctl --out ./o exec 'await one.succeed("systemctl --failed")'
+vivarium ctl --out ./o exec - < snippet.py         # top-level await; names persist
+vivarium ctl --out ./o inject ./scratch.py         # a file's test(vms), from the working tree
+vivarium ctl --out ./o pytest ./tests/chaos -- -k etcd   # pytest from the working tree
+vivarium ctl --out ./o run check                   # a declared phase
+vivarium ctl --out ./o continue
 ```
 
 In scope for `exec`: `session`, `vms`, each guest by name, `anyio`.
@@ -108,18 +108,18 @@ the kernel's status.
 
 ## The MCP server
 
-`.mcp.json` registers `vivarium-mcp` as `uml`. Its tools are `start`,
+`.mcp.json` registers `vivarium-mcp` as `vivarium`. Its tools are `start`,
 `state`, `exec`, `inject`, `run_pytest`, `run_phase`, `resume`, `stop`,
 `events` and `runs`. A run started by `start` is a child process with
 `--break-on-failure`, never the server itself: MCP's stdio is the
 server's stdout, and a session prints to stdout.
 
-It pushes `<channel source="uml" run=... event="failed|paused|finished|exited">`
+It pushes `<channel source="vivarium" run=... event="failed|paused|finished|exited">`
 into the session. Channels are a research preview, so they reach Claude
 only when started from this directory with:
 
 ```sh
-claude --dangerously-load-development-channels server:uml
+claude --dangerously-load-development-channels server:vivarium
 ```
 
 Without the flag the tools still work, and `vivarium monitor` carries the
@@ -173,11 +173,15 @@ and a failed phase replays the last 20 lines of every guest by itself.
 ## Where a test script belongs
 
 This repository is a library: `mkTest`, the guest modules, and
-`uml.runner` (the `vivarium_runner` package, `py.typed`). A test script belongs
+`vivarium.runner` (the `vivarium_runner` package, `py.typed`). A test script belongs
 in the project it tests.
 
-    let uml = import (sources.user-mode-nixos + "/lib.nix") { inherit pkgs; };
-    in uml.mkTest { name = "..."; script = ./tests/uml/mine.py; nodes = { ... }; }
+    let vivarium = import (sources.vivarium + "/lib.nix") { inherit pkgs; };
+    in vivarium.mkTest {
+      name = "...";
+      nodes.one = { };
+      phases.check = { script = ./tests/vivarium/check.py; after = [ "boot" ]; };
+    }
 
 `tests/` here is for this repository's own facilities — segment,
 forwards, store, `/artifacts`. Do not add another project's script to it.
@@ -187,7 +191,7 @@ unit, reading a journal, asking systemd what failed. A consumer copying
 one out of `tests/` means it should be a method on `Machine`.
 
 ```nix
-uml.typeCheck { name = "mine"; scripts = [ ./tests/uml/run.py ]; }
+vivarium.typeCheck { name = "mine"; scripts = [ ./tests/vivarium/check.py ]; }
 ```
 
 pyright against `vivarium_runner` in a derivation. **Annotate the parameter** —
