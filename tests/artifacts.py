@@ -6,7 +6,9 @@ wedges or is killed cannot be asked for anything, and a file it wrote a
 minute earlier is already on the host.  So this writes in the guest and
 reads on the host, with nothing in between.
 
-Two guests, because each one must get its own directory.
+Two guests, because each one must get its own directory. A user other
+than root writes too: a test suite in a guest seldom runs as root, and
+the host side must accept a file from an id it may not map.
 """
 
 from vivarium_runner import Machines
@@ -27,8 +29,9 @@ async def test(vms: Machines) -> None:
             f"dd if=/dev/urandom of=/artifacts/blob "
             f"bs=1024 count={BLOB // 1024} 2>/dev/null"
         )
+        await vm.succeed("runuser -u tester -- sh -c 'echo tester > /artifacts/by-user'")
         await vm.succeed("sync")
-        print(f"[test] {name} wrote to its /artifacts")
+        print(f"[test] {name} wrote to its /artifacts, as root and as tester")
 
     # No command runs to fetch any of this.
     for name in vms:
@@ -38,6 +41,8 @@ async def test(vms: Machines) -> None:
         )
         size = (here / "blob").stat().st_size
         assert size == BLOB, f"{here}/blob is {size} bytes, not {BLOB}"
+        by_user = (here / "by-user").read_text().strip()
+        assert by_user == "tester", f"{here}/by-user says {by_user!r}, not tester"
         print(f"[test] the host reads {here}/who and a {size}-byte blob")
 
     (vms.artifacts / "one" / "from-the-host").write_text("hello\n")

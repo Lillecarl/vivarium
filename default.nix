@@ -336,6 +336,7 @@ let
       };
       nodes = lib.genAttrs [ "one" "two" ] (_: {
         environment.systemPackages = [ pkgs.util-linux ];
+        users.users.tester.isNormalUser = true;
       });
     };
 

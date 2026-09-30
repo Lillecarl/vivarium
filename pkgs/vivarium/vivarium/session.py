@@ -798,9 +798,13 @@ class Session:
         Per guest, because three nodes writing `pytest.log` into one
         directory is two lost files. Made here and not in the guest:
         hostfs and virtiofs both serve a directory that exists.
+
+        Mode 1777, as /tmp: the runner is root of its own namespace, so
+        without it only a guest's root could write here.
         """
         path = self.artifacts / name
         path.mkdir(parents=True, exist_ok=True)
+        path.chmod(0o1777)
         return path
 
 
