@@ -98,8 +98,12 @@ The long record up to 2026-09-30 is `history/running-anywhere.md`.
    view as a directory in the run's one namespace. QEMU hands it to
    virtiofsd's `--shared-dir`; a UML guest gets its path on the kernel
    command line, and `/init` mounts hostfs from there, as it does for
-   `/artifacts`. Open: whether passt starts as root in a namespace that
-   maps subordinate ids, and in one that maps only the caller.
+   `/artifacts`. Measured: the runner as root of its own namespace works
+   in both shapes. Root alone (`uplink.nsRoot`) and root plus
+   subordinate ids (`uplink.nsRootSubids`) both reach the internet
+   through passt, and a container guest passes with subordinate ids
+   (`container.nsRootSubids`: it builds in its own store, and the host
+   reaches its sshd).
 2. **The output schema:** the names of the outputs above, after
    nixos-test's.
 3. **When does the quiet monitor exit:** at the first pause, or at the
