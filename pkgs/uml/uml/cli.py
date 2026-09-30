@@ -24,7 +24,7 @@ from pathlib import Path
 import anyio
 from uml_runner import MachineError
 
-from . import monitor
+from . import monitor, namespace
 from .control import SOCKET, Controller, Op, request
 from .events import Kind, Level
 from .phases import PhaseState, launchable, ready, summarise
@@ -225,6 +225,7 @@ async def run(args: argparse.Namespace) -> int:
         kernel=args.kernel.resolve() if args.kernel else None,
     )
     session.emit(Kind.RUN_STARTED, f"output in {args.out}")
+    session.emit(Kind.NOTE, namespace.describe(Path("/proc/self/uid_map").read_text()))
     announce(session)
 
     if args.only:
@@ -456,11 +457,13 @@ def main(argv: list[str] | None = None) -> None:
     try:
         if args.command == "phases":
             raise SystemExit(anyio.run(phases, args))
+        # First, before anything boots or any thread starts.
+        namespace.enter(Spec.read(args.spec).unshare)
         args.out.mkdir(parents=True, exist_ok=True)
         raise SystemExit(anyio.run(run, args))
     except KeyboardInterrupt:
         raise SystemExit(130) from None
-    except (SessionError, SpecError) as error:
+    except (SessionError, SpecError, namespace.NamespaceError) as error:
         print(f"[uml] {error}", file=sys.stderr, flush=True)
         raise SystemExit(1) from None
 

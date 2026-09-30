@@ -135,6 +135,9 @@ class Spec(Strict):
     virtiofsd: Path | None = None
     crun: Path | None = None
     setpriv: Path | None = None
+    unshare: Path | None = None
+    """util-linux's, which puts `uml run` in its own namespace. See
+    `uml/namespace.py`."""
 
     @classmethod
     def read(cls, path: Path) -> Spec:

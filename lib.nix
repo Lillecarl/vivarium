@@ -664,6 +664,7 @@ rec {
           toolchainFor machines
           // {
             inherit (checkedConfig) name settings;
+            unshare = "${lib.getBin pkgs.util-linux}/bin/unshare";
             # The runner that knows every field below. No cycle: the
             # package does not depend on any spec.
             uml = "${session}";
