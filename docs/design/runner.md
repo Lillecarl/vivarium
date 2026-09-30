@@ -69,8 +69,8 @@ script API in `vivarium_runner/nixos_test.py`. `nixos-tests` runs
 nixpkgs' simple-vm, systemd-no-tainted and oh-my-zsh sandboxed.
 
 Built: the outputs below, `interactive`, and this repository's tests
-as `mkTest`s; the old `mkTest` is gone. nixkube still calls the old
-shapes and moves next.
+as `mkTest`s; the old `mkTest` is gone. nixkube's tests are all
+`mkTest` or `fromNixosTest` runs.
 
 Inputs, as module options:
 
