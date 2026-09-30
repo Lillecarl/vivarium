@@ -5,7 +5,7 @@ Read README.md first — it explains how the pieces fit together.
 ## Two doors, and one of them is being replaced
 
 `mkSession` is the new one: guests plus named phases, ordered in Nix. It
-is where work goes. `docs/design/running-anywhere.md` is the design and
+is where work goes. `docs/design/runner.md` is the design and
 records what is decided and what is not.
 
 `mkTest` is the old one: one script, `run_test(test)` at the bottom of

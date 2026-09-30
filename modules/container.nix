@@ -3,7 +3,7 @@
 # No kernel and no disk: the runner starts this system's init under crun,
 # as the user who started the run, with an overlay over the host's
 # /nix/store. See uml_runner/container.py and Area 8 of
-# docs/design/running-anywhere.md.
+# docs/design/history/running-anywhere.md.
 {
   config,
   lib,

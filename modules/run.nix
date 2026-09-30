@@ -10,7 +10,7 @@
 # reorders it, replaces its script or drops it with `lib.mkForce`, the way
 # they override any other option.
 #
-# See docs/design/running-anywhere.md.
+# See docs/design/history/running-anywhere.md.
 {
   config,
   lib,

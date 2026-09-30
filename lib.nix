@@ -28,7 +28,7 @@ rec {
     The session, and the `uml` CLI that drives one.
 
     The redesign lives here; `runner` above is the mechanism it uses and
-    is not going away. See `docs/design/running-anywhere.md`.
+    is not going away. See `docs/design/history/running-anywhere.md`.
   */
   session = pkgs.callPackage ./pkgs/uml { uml-runner = runner; };
 

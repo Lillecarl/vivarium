@@ -13,7 +13,7 @@ a real bug never runs at all.
 
 Knowing which is which needs the dependency graph, which is why `after`
 is a list of names and not an order number.  See
-`docs/design/running-anywhere.md`, area 0e.
+`docs/design/history/running-anywhere.md`, area 0e.
 """
 
 from __future__ import annotations

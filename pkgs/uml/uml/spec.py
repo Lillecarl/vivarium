@@ -8,7 +8,7 @@ something to check a caller against.
 Nothing here decides anything.  The spec is **input**: the runner and the
 recipes are built once and do not move when it does, so a value in here
 never reaches an image, a database or a derivation the guests depend on.
-See `docs/design/running-anywhere.md`, area 0a.
+See `docs/design/history/running-anywhere.md`, area 0a.
 """
 
 from __future__ import annotations

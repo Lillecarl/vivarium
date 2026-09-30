@@ -2,7 +2,7 @@
 
 No kernel boot: the guest's systemd runs as PID 1 in a user, PID, mount,
 cgroup and network namespace of its own, as the user who started the run.
-``docs/design/running-anywhere.md`` (Area 8) has the measurements this is
+``docs/design/history/running-anywhere.md`` (Area 8) has the measurements this is
 built on.
 
 Three pieces, each for a fact measured before it was written:
