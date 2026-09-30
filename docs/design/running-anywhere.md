@@ -1359,6 +1359,29 @@
 21 guest configuration gives the default route. A sandboxed run then
 21 needs nothing from a builder beyond Nix's own sandbox. An offline run
 21 needs a user namespace only for the store view.
+22
+22 ### Round 22: user namespaces are a requirement
+22
+22 Decided. The round-21 proposal is rejected.
+22
+22 - **Every run depends on user namespaces:** sandboxed, offline and
+22   online. user-mode-nixos is a modern test framework, and a host
+22   without them is not a target. This replaces the levels table of round
+22   20: level 0 is not built.
+22 - **passt runs everywhere,** so a guest has the same interfaces, the
+22   same addresses and the same forwards in every run.
+22 - **Store views run everywhere,** in the sandbox as well as by hand.
+22 - **Each guest gets its own store view**, of its own closure, in both
+22   kinds of run. A guest that uses a path only another guest or the
+22   runner has then fails in every run, not only in CI. The round-20
+22   probe shows that each piece works inside both sandbox kinds; a whole
+22   run with one view per guest is not measured yet.
+22
+22 Consequence: a builder must allow unprivileged user namespaces. No Nix
+22 system feature says so. So checking for them is the first thing a run
+22 does, sandboxed and by hand, before it starts anything. Without them
+22 it fails at once and names the fix, as `container-probe` does for the
+22 container backend. It never fails after the guests boot.
 18
 1 ## What "any machine" means
 1
