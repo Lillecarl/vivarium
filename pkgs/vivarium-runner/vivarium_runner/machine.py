@@ -33,6 +33,7 @@ from typing import Any, Callable
 from .agent import AGENT_READY
 from .arpyc import AsyncConnection, connect
 from . import backend as backends
+from . import container
 from . import forward
 from . import mconsole
 from . import qmp
@@ -806,6 +807,16 @@ class Machine:
         """
         if self._process is None:
             raise MachineError(f"[{self.name}] is not running")
+        if self.spec.backend == "container":
+            # Its own cgroup's count where it has one; the processes'
+            # PSS where it has none, which is every uid-range build.
+            own = container.own_cgroup_memory_kib(self._process.pid)
+            if own is not None:
+                return own
+            try:
+                return container.tree_pss_kib(self._process.pid)
+            except RuntimeError as error:
+                raise MachineError(f"[{self.name}] {error}") from error
         if self._pid_file is None:
             pid = str(self._process.pid)
         else:

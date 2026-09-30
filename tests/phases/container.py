@@ -43,6 +43,13 @@ async def test(vms: Machines) -> None:
         raise AssertionError(f"a login shell has NIX_REMOTE={remote!r}, expected 'auto'")
     print("[test] NIX_REMOTE is auto, as on the other backends")
 
+    # What the host pays, as for the other backends: the processes' PSS,
+    # since a container has no memory file.
+    kib = one.host_memory_kib()
+    if kib <= 0:
+        raise AssertionError(f"the host pays {kib} KiB for a running guest")
+    print(f"[test] the host pays {kib // 1024} MiB for this guest")
+
     if store_is_one_mount("/nix"):
         await _writable_store(one)
     else:

@@ -344,6 +344,61 @@ def setuid_allowed(directory: Path) -> bool:
         probe_file.unlink()
 
 
+def own_cgroup_memory_kib(pid: int) -> int | None:
+    """``memory.current`` of *pid*'s cgroup, when that cgroup is its own.
+
+    ``None`` when *pid* shares this process's cgroup, which then holds
+    more than the guest, or when the cgroup has no memory controller: a
+    ``uid-range`` build's cgroup has none, and cannot add one (measured).
+    """
+    def path(of: str) -> str:
+        return Path(f"/proc/{of}/cgroup").read_text().strip().split(":", 2)[2]
+
+    try:
+        mine = path(str(pid))
+        if mine == path("self"):
+            return None
+        return int(Path(f"/sys/fs/cgroup{mine}/memory.current").read_text()) // 1024
+    except (OSError, ValueError, IndexError):
+        return None
+
+
+def tree_pss_kib(root: int) -> int:
+    """Kibibytes the host pays for *root* and every process under it.
+
+    A container has no memory file of its own the way a UML or QEMU guest
+    has: its memory is its processes'. PSS and not RSS, so a page the
+    processes share with each other or with the host's page cache counts
+    once, split between its users. Raises when no process's figure could
+    be read, rather than report a guest that costs nothing.
+    """
+    children: dict[int, list[int]] = {}
+    for entry in Path("/proc").iterdir():
+        if not entry.name.isdigit():
+            continue
+        try:
+            ppid = int((entry / "stat").read_text().rsplit(")", 1)[1].split()[1])
+        except (OSError, IndexError, ValueError):
+            continue
+        children.setdefault(ppid, []).append(int(entry.name))
+
+    total, read, todo = 0, 0, [root]
+    while todo:
+        pid = todo.pop()
+        todo += children.get(pid, [])
+        try:
+            rollup = Path(f"/proc/{pid}/smaps_rollup").read_text()
+        except OSError:
+            continue
+        pss = next((line.split()[1] for line in rollup.splitlines() if line.startswith("Pss:")), None)
+        if pss is not None:
+            total += int(pss)
+            read += 1
+    if read == 0:
+        raise RuntimeError(f"no process under {root} has a readable smaps_rollup")
+    return total
+
+
 def store_is_one_mount(store: str) -> bool:
     """Whether *store*/store has no mounts under it. A sandbox's store has
     one bind per input, which an overlay lower does not show."""
@@ -445,9 +500,12 @@ def _probe_ranges(user: str, uid: int, userns: bool, missing: list[Missing]) -> 
 SCOPE = ["--user", "--scope", "--quiet", "--collect", "-p", "Delegate=yes"]
 
 
-def scope() -> list[str] | None:
+def scope(memory_max: int | None = None) -> list[str] | None:
     """A command prefix that runs its command in a delegated cgroup, or
     ``None`` when the user's systemd will not make one.
+
+    The scope is the guest's own cgroup: ``memory.current`` there is what
+    the host pays for it, and *memory_max* bytes is its limit.
 
     ``systemd-run --scope`` execs the command in its own process rather
     than forking it, so the parent-death signal the runner set survives.
@@ -457,12 +515,8 @@ def scope() -> list[str] | None:
     path = _which("systemd-run")
     if path is None:
         return None
-    prefix = [path, *SCOPE]
+    prefix = [path, *SCOPE, *(["-p", f"MemoryMax={memory_max}"] if memory_max else [])]
     return prefix if cgroup_works(prefix) else None
-
-
-def needs_scope() -> bool:
-    return not cgroup_works()
 
 
 def _try_map(helper: str, host: int, extra: Range) -> str | None:

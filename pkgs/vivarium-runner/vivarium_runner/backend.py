@@ -778,9 +778,11 @@ class Container:
             if lan_fd is not None
             else []
         )
-        # A cgroup systemd in the guest can write in: the one this runs in,
-        # or a delegated scope made for the launcher when it is not.
-        prefix = (container.scope() or []) if container.needs_scope() else []
+        # A delegated scope of its own where the user's systemd makes one:
+        # a cgroup the guest's systemd writes in, its memory counted apart
+        # from every other guest's, and `vivarium.memory` as its limit.
+        # Otherwise the cgroup this runs in, which is every uid-range build.
+        prefix = container.scope(memory_bytes(spec.memory)) or []
         return Launch(
             argv=[
                 *prefix,
