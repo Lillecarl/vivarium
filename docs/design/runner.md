@@ -66,10 +66,10 @@ The long record up to 2026-09-30 is `history/running-anywhere.md`.
   bind per path, read-only as a whole through `mount_setattr`
   (`uml_runner/storeview.py`). The closure is the closureInfo the
   guest's Nix database is loaded from (`umlNixRegistration`), so the
-  database lists exactly what the view holds. Built for UML and QEMU:
-  virtiofsd serves the view, and a UML guest's `/init` mounts it from
-  `UML_STORE` on the kernel command line (`store-view`, by hand and
-  sandboxed; it fails with views off).
+  database lists exactly what the view holds. virtiofsd serves a QEMU
+  guest's view, and a UML guest's `/init` mounts it from `UML_STORE` on
+  the kernel command line (`store-view`: all three backends, by hand
+  and sandboxed; it fails with views off).
 - **A VM guest's store is writable through its own overlay**, inside its
   own kernel, on its own disk. The host serves only the read-only view,
   so the guest's build users need no ids in the run's namespace, and a
@@ -78,8 +78,7 @@ The long record up to 2026-09-30 is `history/running-anywhere.md`.
   directory on the host holding one read-only bind per closure path. New
   paths sit beside the binds; a supplied path cannot be deleted or
   overwritten. No overlay, because a host-side overlay cannot see
-  binds. Not built yet; container guests see the host's store until it
-  is.
+  binds. Built; writable in the sandbox too (`store-view`).
 - **Guests talk to each other on `vec1`**: socketpairs, and a hub in the
   runner for three or more. It needs no namespace and no passt
   (`lan.stubBlocked`). UML, QEMU and container guests mix in one run
@@ -149,8 +148,7 @@ The long record up to 2026-09-30 is `history/running-anywhere.md`.
 
 ## Order of work
 
-1. The container store: nixkube's layout.
-2. Write the entrypoint and output schema here, for review (open 1).
-3. Build it in the library; move this repository's tests, then
+1. Write the entrypoint and output schema here, for review (open 1).
+2. Build it in the library; move this repository's tests, then
    nixkube's.
-4. The agent-experience items.
+3. The agent-experience items.
