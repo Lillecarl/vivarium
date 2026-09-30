@@ -62,7 +62,14 @@ add what is useful and do not limit ourselves to its set.
 and lives apart from it. `testScript`, `containers`, `nodeDefaults` and
 the rest of nixos-test's shape are its inputs, never the main
 function's. The main function stays as clean as if nixos-test did not
-exist.
+exist. Built: `fromNixosTest` (`nixos-test.nix`) with nixos-test's
+script API in `uml_runner/nixos_test.py`. `nixos-tests` runs
+nixpkgs' simple-vm, systemd-no-tainted and oh-my-zsh sandboxed, and
+simple-container by hand (it needs `/dev/net/tun`).
+
+Built: the outputs below, `interactive`, and this repository's tests
+as sessions. `mkSession` is the one function; `mkTest` stays only
+until nixkube moves.
 
 Inputs, as module options:
 
@@ -87,7 +94,7 @@ Outputs:
 | the derivation | the sandboxed run | same; exits on the first failure |
 | `.driver` | the run by hand | same; exits on the first failure. Replaces `.run` |
 | `.driverInteractive` | by hand, into a ptpython REPL with the test's symbols; nothing runs until asked | the same: the run pauses before the first phase and a REPL attaches to it, with `vms`, each guest and a way to run a phase or the rest |
-| `.driverDebug` (name open) | none | by hand, and pauses on the first failure with the guests up; the MCP server starts this one |
+| `.driverDebug` | none | by hand, and pauses on the first failure with the guests up; the MCP server starts this one |
 | `.nodes`, `.config` | the evaluated guests and test | same (`.nodes` built) |
 | `.extend { modules; }` | the test with more modules | same |
 | `.uml`, `.qemu`, `.container` | none | helpers over `.extend`: every node on that backend |
@@ -117,10 +124,9 @@ The MCP server drives this runner only. It knows nothing of
 nixos-test's driver; a nixos-test spec reaches it through the compat
 function.
 
-Open:
-
-- The name of the output that pauses on failure: `.driverDebug`?
-- `interactive`: build it now, or when a test needs it?
+Decided: the output that pauses on failure is `.driverDebug`, and
+`interactive` is built now: it is small, and it is how a person learns
+a test.
 
 ## Isolation
 
@@ -173,22 +179,20 @@ Open:
 
 ## Open
 
-1. **The output schema:** the names of the outputs above, after
-   nixos-test's.
-2. **When does the quiet monitor exit:** at the first pause, or at the
+1. **When does the quiet monitor exit:** at the first pause, or at the
    verdict?
-3. **Python inside a guest:** wanted? The agent is a Python process
+2. **Python inside a guest:** wanted? The agent is a Python process
    already; `exec` today runs on the host.
-4. **A size budget for MCP replies.** A failed nixkube case returned
+3. **A size budget for MCP replies.** A failed nixkube case returned
    233k characters. Proposed: 16k a reply, 2k an event, the rest in a
    file the reply names.
-5. **Reusable modules go in `defaults`** (Carl's idea). Every guest
+4. **Reusable modules go in `defaults`** (Carl's idea). Every guest
    imports a reusable module through `defaults`, and the module brings
    its own scripts. An option that must differ per guest has no default,
    so each guest sets it or evaluation fails. Open: how a guest-level
    NixOS module adds a script to the run. The run would collect it from
    each guest's evaluated configuration.
-6. **Is a phase a systemd unit?** (Carl's idea.) Most work runs in the
+5. **Is a phase a systemd unit?** (Carl's idea.) Most work runs in the
    guests under systemd, and the host waits and checks. A unit that
    needs another guest to be ready waits for a file that the runner
    writes, not for a retry to succeed: a worker's `kubeadm join` unit
@@ -219,7 +223,5 @@ Open:
 
 ## Order of work
 
-1. Write the entrypoint and output schema here, for review (open 1).
-2. Build it in the library; move this repository's tests, then
-   nixkube's.
-3. The agent-experience items.
+1. Move nixkube to `mkSession`, then remove `mkTest`.
+2. The agent-experience items.
