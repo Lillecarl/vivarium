@@ -1,12 +1,13 @@
 """`vivarium monitor`: one line per event, and the verdict as the exit status."""
 
+import contextlib
 import json
 from pathlib import Path
 
 import anyio
 import pytest
 
-from vivarium.monitor import SOCKET, follow, line, locate, status
+from vivarium.monitor import LIVE, PAUSED, SOCKET, follow, line, locate, paused_now, status
 
 
 class TestLine:
@@ -40,6 +41,26 @@ class TestStatus:
         assert status(event) == code
 
 
+PAUSE = {"run": "r", "event": "paused", "text": "paused after boot failed"}
+RESUMED = {"run": "r", "event": "resumed", "text": "resumed, paused after boot failed"}
+FAILED = {"run": "r", "event": "finished", "passed": "false", "text": "run failed"}
+
+
+@pytest.mark.parametrize(
+    ("events", "paused"),
+    [
+        ([], False),
+        ([PAUSE], True),
+        ([PAUSE, RESUMED], False),
+        ([PAUSE, RESUMED, PAUSE], True),
+        ([PAUSE, {"event": "progress"}], True),
+        ([PAUSE, FAILED], False),
+    ],
+)
+def test_paused_now_is_the_last_pause_left_open(events, paused):
+    assert paused_now(events) == paused
+
+
 def test_locate_takes_a_directory_or_an_id(tmp_path: Path):
     assert locate(str(tmp_path)) == tmp_path / SOCKET
     assert locate("vivarium-x-abc").name == SOCKET
@@ -50,8 +71,10 @@ async def _serve(path: Path, events: list[dict]) -> None:
     """One client, these events, then close."""
     async with await anyio.create_unix_listener(str(path)) as listener:
         async with await listener.accept() as stream:
-            for event in events:
-                await stream.send(json.dumps(event).encode() + b"\n")
+            # A client that exits at a pause leaves before the rest.
+            with contextlib.suppress(anyio.BrokenResourceError):
+                for event in events:
+                    await stream.send(json.dumps(event).encode() + b"\n")
 
 
 @pytest.mark.anyio
@@ -104,3 +127,39 @@ async def test_a_stream_that_ends_before_the_verdict_is_3(tmp_path: Path):
             await anyio.sleep(0.01)
         with anyio.fail_after(5):
             assert await follow(socket) == 3
+
+
+async def _follow(tmp_path: Path, events: list[dict], **options) -> int:
+    socket = tmp_path / SOCKET
+    async with anyio.create_task_group() as group:
+        group.start_soon(_serve, socket, events)
+        while not socket.exists():
+            await anyio.sleep(0.01)
+        with anyio.fail_after(5):
+            return await follow(socket, **options)
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("events", "until_pause", "code"),
+    [
+        # A live pause: only --until-pause stops there.
+        ([LIVE, PAUSE, RESUMED, FAILED], True, PAUSED),
+        ([LIVE, PAUSE, RESUMED, FAILED], False, 1),
+        # Armed while paused: the replayed pause is still open.
+        ([PAUSE, LIVE], True, PAUSED),
+        ([PAUSE, LIVE], False, 3),
+        # Armed after a resume: the replayed pause is closed.
+        ([PAUSE, RESUMED, LIVE, FAILED], True, 1),
+        # The replay alone decides nothing until it ends.
+        ([PAUSE, RESUMED], True, 3),
+    ],
+)
+async def test_until_pause_exits_at_an_open_pause(tmp_path: Path, events, until_pause, code):
+    assert await _follow(tmp_path, events, until_pause=until_pause) == code
+
+
+@pytest.mark.anyio
+async def test_live_is_not_printed(tmp_path: Path, capsys):
+    await _follow(tmp_path, [PAUSE, LIVE], until_pause=True, quiet=True)
+    assert capsys.readouterr().out.splitlines() == ["r paused: paused after boot failed"]

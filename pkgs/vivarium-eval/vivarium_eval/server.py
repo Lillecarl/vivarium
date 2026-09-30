@@ -44,7 +44,7 @@ from mcp.shared.message import SessionMessage
 from mcp.types import JSONRPCMessage, JSONRPCNotification
 from vivarium.control import SOCKET, Op, Reply, reachable, request
 from vivarium.journal import Tail
-from vivarium.monitor import SOCKET as MONITOR_SOCKET, TERMINAL
+from vivarium.monitor import LIVE, SOCKET as MONITOR_SOCKET, TERMINAL, paused_now
 
 from .cli import split_attr
 
@@ -69,13 +69,16 @@ for a failing test is: edit it, send it again, against the same guests.
 `events` queries the run's event stream: filter by kind (journal, case,
 phase_finished, rpc, output, error), machine, unit, phase or case.
 
-Events arrive as <channel source="vivarium" run="..." event="progress|paused|failed|finished|exited" ...>.
-A `progress` event marks a phase starting or passing; say one line about
-it so the person watching sees the run move, and do nothing else.
+Events arrive as <channel source="vivarium" run="..." event="progress|paused|resumed|failed|finished|exited" ...>.
+A `progress` or `resumed` event marks the run moving on; say one line
+about it so the person watching sees the run move, and do nothing else.
 Without channels, run the `monitor` command that `start` returns in a
 Monitor: it prints pauses, failures and the verdict, one line each, and
 exits with the verdict (0 passed, 1 failed, 2 exited without one).
 `monitor_all` prints every event, progress included.
+If your harness wakes you only when a background command exits, run
+`monitor_pause` in the background instead: it also exits 4 at a pause.
+Run it again after each `resume`.
 On `paused`, look with `events` and `exec` before you `resume` -- the
 guests go down when the run ends. `stop` ends a run early and still
 tears the guests down.
@@ -99,6 +102,9 @@ def channel_event(event: dict[str, Any], run: str) -> tuple[str, dict[str, str]]
     # Facts only. Claude Code frames channel content as untrusted and
     # tells the model not to act on imperative language in it, so what
     # to do next belongs in the server's `instructions`, which it trusts.
+    if kind == "note" and "resumed" in data:
+        meta |= {"event": "resumed", "reason": str(data["resumed"])}
+        return f"resumed, paused {data['resumed']}", meta
     if kind == "note" and "reason" in data:
         meta |= {"event": "paused", "reason": str(data["reason"])}
         return f"paused {data['reason']}; the guests are up until the run is resumed or stopped", meta
@@ -306,7 +312,7 @@ class Runs:
 
 
 async def _monitor(run: Run, stream: SocketStream) -> None:
-    """One `vivarium monitor`: the backlog, then each event, until the verdict."""
+    """One `vivarium monitor`: the backlog, `LIVE`, then each event, until the verdict."""
     send, receive = anyio.create_memory_object_stream[dict[str, str]](math.inf)
     # No await between the copy and the append, so no event falls between.
     backlog = list(run.backlog)
@@ -317,6 +323,7 @@ async def _monitor(run: Run, stream: SocketStream) -> None:
                 await stream.send(json.dumps(event).encode() + b"\n")
                 if event.get("event") in TERMINAL:
                     return
+            await stream.send(json.dumps(LIVE).encode() + b"\n")
             async for event in receive:
                 await stream.send(json.dumps(event).encode() + b"\n")
                 if event.get("event") in TERMINAL:
@@ -410,7 +417,8 @@ def build(runs_holder: list[Runs]) -> FastMCP:
         `linux` from a UML build, or a bzImage with virtio built in.
         Events arrive on the vivarium channel. `monitor` in the reply is a
         command that prints the pauses, failures and verdict, one line
-        each; `monitor_all` prints every event. `state` and `events`
+        each; `monitor_all` prints every event; `monitor_pause` is
+        `monitor` that also exits 4 at a pause. `state` and `events`
         answer meanwhile."""
         written = _spec(Path(str(spec))) if spec is not None else {}
         name = (attr or str(written.get("name", "run"))).replace(".", "-")
@@ -435,6 +443,7 @@ def build(runs_holder: list[Runs]) -> FastMCP:
             "out": str(out),
             "monitor": shlex.join([*every, "--quiet"]),
             "monitor_all": shlex.join(every),
+            "monitor_pause": shlex.join([*every, "--quiet", "--until-pause"]),
         }
 
     @server.tool()
@@ -479,7 +488,14 @@ def build(runs_holder: list[Runs]) -> FastMCP:
     @server.tool()
     async def resume(run: str) -> dict[str, Any]:
         """Continue a paused run."""
-        return _reply(await request(runs().get(run).socket, Op.CONTINUE))
+        found = runs().get(run)
+        reply = _reply(await request(found.socket, Op.CONTINUE))
+        # Until the pause is resolved in the backlog: a `monitor_pause`
+        # armed on this reply would otherwise replay the pause and exit.
+        with anyio.move_on_after(10):
+            while paused_now(found.backlog) and found.process.returncode is None:
+                await anyio.sleep(0.05)
+        return reply
 
     @server.tool()
     async def stop(run: str) -> dict[str, Any]:

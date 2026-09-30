@@ -48,6 +48,13 @@ class TestChannelEvent:
         assert meta == {"run": "r1", "event": "paused", "reason": "after cases failed"}
         assert "guests are up" in content
 
+    def test_a_resume(self):
+        pushed = channel_event(event("note", text="resumed", data={"resumed": "after cases failed"}), "r1")
+        assert pushed == (
+            "resumed, paused after cases failed",
+            {"run": "r1", "event": "resumed", "reason": "after cases failed"},
+        )
+
     def test_a_failed_phase(self):
         pushed = channel_event(
             event("phase_finished", phase="cases", data={"state": "failed", "error": "boom"}), "r1"
@@ -240,7 +247,7 @@ async def test_a_monitor_gets_the_backlog_then_each_event_until_the_verdict(tmp_
             async with client:
                 lines = await _read_lines(client)
         group.cancel_scope.cancel()
-    assert [event["event"] for event in lines] == ["progress", "finished"]
+    assert [event["event"] for event in lines] == ["progress", "live", "finished"]
     assert run.watchers == []
 
 

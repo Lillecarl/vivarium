@@ -15,6 +15,7 @@ was documented and rejected.
 from __future__ import annotations
 
 import argparse
+import functools
 import os
 import shlex
 import signal
@@ -177,7 +178,8 @@ def parse(argv: list[str] | None = None) -> argparse.Namespace:
         help="print a run's events, one line each, until its verdict",
         description=(
             "Follow a run that vivarium-mcp started. Exit 0 if it passed, 1 if it"
-            " failed, 2 if it exited without a verdict, 3 if the stream ended early."
+            " failed, 2 if it exited without a verdict, 3 if the stream ended early,"
+            " 4 if it paused and --until-pause is given."
         ),
     )
     watch.add_argument("target", help="the run's --out directory, or its id")
@@ -186,6 +188,11 @@ def parse(argv: list[str] | None = None) -> argparse.Namespace:
         "--quiet",
         action="store_true",
         help="only pauses, failures and the verdict, not each phase that starts or passes",
+    )
+    watch.add_argument(
+        "--until-pause",
+        action="store_true",
+        help="exit 4 when the run is paused, for a harness that wakes an agent when a command ends",
     )
     args = parser.parse_args(argv)
     args.pytest_args = extra
@@ -522,7 +529,10 @@ def main(argv: list[str] | None = None) -> None:
     if args.command == "monitor":
         socket = monitor.locate(args.target)
         try:
-            raise SystemExit(anyio.run(lambda: monitor.follow(socket, as_json=args.json, quiet=args.quiet)))
+            follow = functools.partial(
+                monitor.follow, socket, as_json=args.json, quiet=args.quiet, until_pause=args.until_pause
+            )
+            raise SystemExit(anyio.run(follow))
         except (FileNotFoundError, ConnectionRefusedError) as error:
             # No socket, or nobody behind it: the server that started the
             # run is gone. What the run wrote is still on the disk.

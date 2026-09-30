@@ -11,9 +11,16 @@ A client connecting late gets the run's earlier events first, then the
 live ones. The server closes the stream after the verdict, and the exit
 status says what the verdict was.
 
-`--quiet` leaves out `progress`, so an agent that runs this in a Monitor
-wakes for a pause, a failure and the verdict, and not for every phase
-that passed.
+`--quiet` leaves out `progress` and `resumed`, so an agent that runs this
+in a Monitor wakes for a pause, a failure and the verdict, and not for
+every phase that passed.
+
+`--until-pause` also exits, with 4, when the run pauses. It is for a
+harness that wakes an agent only when a background command ends: arm it,
+and the agent comes back at the pause. After `resume`, arm it again. A
+pause in the replayed events counts only when no `resumed` follows it,
+and the server sends `LIVE` after the replay, so a monitor armed while
+the run is paused exits at once, and one armed after a resume does not.
 """
 
 from __future__ import annotations
@@ -32,8 +39,15 @@ SOCKET: Final = "monitor.sock"
 TERMINAL: Final = frozenset({"finished", "exited"})
 """The events after which a run sends nothing more."""
 
-QUIET_SKIPS: Final = frozenset({"progress"})
-"""What `--quiet` leaves out: a phase starting or passing needs no one."""
+QUIET_SKIPS: Final = frozenset({"progress", "resumed"})
+"""What `--quiet` leaves out: nobody needs to wake for these."""
+
+LIVE: Final = {"event": "live"}
+"""What the server sends after the replayed events. It is not an event and
+is not printed."""
+
+PAUSED: Final = 4
+"""The exit status of `--until-pause` at a pause."""
 
 
 def shown(event: dict[str, Any], *, quiet: bool) -> bool:
@@ -51,6 +65,17 @@ def status(event: dict[str, Any]) -> int | None:
     if event.get("event") == "exited":
         return 2
     return None
+
+
+def paused_now(events: list[dict[str, Any]]) -> bool:
+    """Whether the run is paused after these events: a pause with no
+    `resumed` or verdict after it."""
+    for event in reversed(events):
+        if event.get("event") == "paused":
+            return True
+        if event.get("event") in {"resumed", *TERMINAL}:
+            return False
+    return False
 
 
 def line(event: dict[str, Any], *, as_json: bool = False) -> str:
@@ -75,12 +100,17 @@ def locate(target: str) -> Path:
     return path / SOCKET
 
 
-async def follow(socket: Path, *, as_json: bool = False, quiet: bool = False) -> int:
-    """Print the run's events until its verdict; answer the exit status."""
+async def follow(
+    socket: Path, *, as_json: bool = False, quiet: bool = False, until_pause: bool = False
+) -> int:
+    """Print the run's events until its verdict, or with `until_pause`
+    until it is paused; answer the exit status."""
     with reachable(socket) as name:
         stream = await anyio.connect_unix(name)
     async with stream:
         buffer = b""
+        seen: list[dict[str, Any]] = []
+        live = False
         while True:
             try:
                 buffer += await stream.receive()
@@ -89,8 +119,14 @@ async def follow(socket: Path, *, as_json: bool = False, quiet: bool = False) ->
             *lines, buffer = buffer.split(b"\n")
             for raw in lines:
                 event = json.loads(raw)
-                if shown(event, quiet=quiet):
-                    print(line(event, as_json=as_json), flush=True)
-                code = status(event)
-                if code is not None:
-                    return code
+                if event == LIVE:
+                    live = True
+                else:
+                    seen.append(event)
+                    if shown(event, quiet=quiet):
+                        print(line(event, as_json=as_json), flush=True)
+                    code = status(event)
+                    if code is not None:
+                        return code
+                if until_pause and live and paused_now(seen):
+                    return PAUSED

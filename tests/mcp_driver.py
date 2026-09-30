@@ -95,6 +95,7 @@ async def main(server: str, spec: str) -> None:
     watcher = await asyncio.create_subprocess_shell(
         started["monitor_all"] + " --json", stdout=asyncio.subprocess.PIPE
     )
+    armed = await asyncio.create_subprocess_shell(started["monitor_pause"], stdout=asyncio.subprocess.PIPE)
 
     paused = await asyncio.wait_for(client.until("paused"), 600)
     if paused["meta"].get("run") != run:
@@ -103,6 +104,17 @@ async def main(server: str, spec: str) -> None:
     if not any(p["meta"].get("event") == "failed" for p in client.channel):
         fail("no channel event for the failed phase")
     print("ok: and one said which phase failed", flush=True)
+
+    # For a harness that wakes an agent only when a command exits.
+    output, _ = await asyncio.wait_for(armed.communicate(), 60)
+    if armed.returncode != 4 or "paused" not in output.decode().splitlines()[-1]:
+        fail(f"monitor_pause exited {armed.returncode} at the pause with {output.decode()!r}")
+    print(f"ok: monitor_pause exited 4 at the pause: {output.decode().splitlines()[-1]}", flush=True)
+    late = await asyncio.create_subprocess_shell(started["monitor_pause"], stdout=asyncio.subprocess.PIPE)
+    await asyncio.wait_for(late.communicate(), 60)
+    if late.returncode != 4:
+        fail(f"monitor_pause armed while paused exited {late.returncode}, not 4")
+    print("ok: monitor_pause armed while paused exited 4 at once", flush=True)
 
     reply = await client.tool("exec", run=run, code='await one.succeed("hostname")')
     if "one" not in str(reply.get("result")):
@@ -131,6 +143,9 @@ async def main(server: str, spec: str) -> None:
     print("ok: run_pytest ran a local test, then its edit, against the paused guest", flush=True)
 
     await client.tool("resume", run=run)
+    # Armed on the reply, as an agent does: the pause it replays is closed,
+    # so it runs on to the verdict.
+    rearmed = await asyncio.create_subprocess_shell(started["monitor_pause"], stdout=asyncio.subprocess.PIPE)
     finished = await asyncio.wait_for(client.until("finished"), 300)
     if finished["meta"].get("passed") != "false":
         fail(f"the verdict is wrong: {finished}")
@@ -152,11 +167,16 @@ async def main(server: str, spec: str) -> None:
         fail(f"a monitor after the verdict exited {late.returncode} with {lines}")
     print(f"ok: a monitor after the verdict replayed it: {lines[-1]}", flush=True)
 
+    await asyncio.wait_for(rearmed.communicate(), 60)
+    if rearmed.returncode != 1:
+        fail(f"monitor_pause armed after resume exited {rearmed.returncode}, not 1 for the verdict")
+    print("ok: monitor_pause armed after resume ran on to the verdict", flush=True)
+
     # The one an agent runs: no progress, so it wakes only when it must.
     quiet = await asyncio.create_subprocess_shell(started["monitor"] + " --json", stdout=asyncio.subprocess.PIPE)
     output, _ = await asyncio.wait_for(quiet.communicate(), 60)
     kept = [json.loads(line) for line in output.decode().splitlines()]
-    wanted = [event for event in heard if event.get("event") != "progress"]
+    wanted = [event for event in heard if event.get("event") not in {"progress", "resumed"}]
     if quiet.returncode != 1 or kept != wanted or len(wanted) == len(heard):
         fail(f"the quiet monitor exited {quiet.returncode} with {kept}, not {wanted}")
     print(f"ok: the quiet monitor printed {len(kept)} of {len(heard)} events: no progress", flush=True)

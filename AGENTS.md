@@ -129,11 +129,18 @@ Without the flag the tools still work, and `vivarium monitor` carries the
 same events. `start` returns it as `monitor`, a command line with
 `--quiet`: run that in Claude Code's Monitor tool, and it wakes you for a
 pause, a failure and the verdict, not for each phase that passes.
-`monitor_all` is the same without `--quiet`. Each run has `<out>/monitor.sock`, served
+`monitor_all` is the same without `--quiet`. `monitor_pause` adds
+`--until-pause`, which also exits 4 at a pause: for a harness that wakes
+an agent only when a background command ends; arm it again after
+`resume`. Each run has `<out>/monitor.sock`, served
 by the `vivarium-mcp` that started it; `vivarium monitor <out|run id>` replays the
 run's events so far, prints each one as one line (`--json` for JSONL)
 and exits with the verdict: 0 passed, 1 failed, 2 exited without one,
-3 the stream ended first. `vivarium/monitor.py` is the client. `nix build
+3 the stream ended first. After the replay the server sends `{"event":
+"live"}`, unprinted: a replayed pause counts for `--until-pause` only if
+no `resumed` follows it, and `resume` replies only once `resumed` is in
+the backlog. `vivarium ctl continue` does not wait: re-arm after the MCP
+`resume` reply, not after it. `vivarium/monitor.py` is the client. `nix build
 --file . mcp-check` drives the server over raw JSON-RPC against a guest,
 and checks a monitor prints exactly the channel's events.
 

@@ -261,7 +261,7 @@ class Controller:
             await self._resume.wait()
         finally:
             self._resume = None
-        self.session.emit(Kind.NOTE, "resumed")
+        self.session.emit(Kind.NOTE, f"resumed, paused {reason}", resumed=reason)
 
     def _bind_guests(self) -> None:
         """`vms` and each guest by name, once the guests exist."""
