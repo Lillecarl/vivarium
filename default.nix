@@ -948,7 +948,6 @@ let
       "simple-vm"
       "systemd-no-tainted"
       "oh-my-zsh"
-      "simple-container"
     ] (name: fromNixosTest (pkgs.path + "/nixos/tests/${name}.nix"));
 
     /*

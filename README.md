@@ -138,7 +138,7 @@ The result is an ordinary `mkTest` run, with all the attributes above.
 `testScript` runs as one phase, through a shim that gives it the
 `nixosTest` API: `start_all`, `machine.succeed`, `wait_for_unit`,
 `subtest` and the rest. OCR and screenshots are not available.
-`nixos-tests` in `default.nix` runs four tests from nixpkgs this way.
+`nixos-tests` in `default.nix` runs three tests from nixpkgs this way.
 
 ## What a run leaves behind
 
