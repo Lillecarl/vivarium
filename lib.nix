@@ -692,7 +692,15 @@ rec {
                   { script = "${phase.script}"; }
               )
             ) checkedConfig.ordered;
-            machines = map machineSpec machines;
+            # Each guest's closure, which the runner turns into its store
+            # view. The same closureInfo its Nix database is loaded from.
+            machines = map (
+              machine:
+              machineSpec machine
+              // {
+                storePaths = "${machine.system.build.umlNixRegistration}/store-paths";
+              }
+            ) machines;
           }
         )
       );

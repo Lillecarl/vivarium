@@ -92,6 +92,10 @@ ARTIFACTS_ENV = "UML_ARTIFACTS"
 host-side ``UML_TEST_ARTIFACTS``: that one names the root of a run, this
 one names one guest's subdirectory of it."""
 
+STORE_ENV = "UML_STORE"
+"""What the UML guest's /init mounts as its /nix: the guest's store view,
+or the host's /nix when it has none."""
+
 ARTIFACTS_TAG = "artifacts"
 """The virtiofs tag QEMU serves the same directory under.
 ``modules/qemu.nix`` mounts it by this name."""
@@ -300,6 +304,8 @@ class Uml:
             # in the boot log. modules/image.nix mounts it there, with
             # busybox, and says why it cannot be a mount unit.
             argv.append(f"{ARTIFACTS_ENV}={machine.artifacts}")
+        # What /init mounts as the guest's /nix; see modules/image.nix.
+        argv.append(f"{STORE_ENV}={spec.store}")
         if lan_fd is not None:
             argv.append(self._vec(1, lan_fd, spec.mtu))
 

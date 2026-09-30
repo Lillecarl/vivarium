@@ -26,7 +26,7 @@ import subprocess as sync_subprocess
 import tempfile
 import time
 from asyncio import subprocess
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Callable
 
@@ -37,6 +37,7 @@ from . import forward
 from . import mconsole
 from . import qmp
 from . import report
+from . import storeview
 
 _ANSI = re.compile(r"\x1b\[[0-9;]*[a-zA-Z]")
 _CONSOLE_HISTORY = 2000
@@ -87,6 +88,12 @@ class Toolchain:
         )
 
 
+VIEWED = frozenset({"uml", "qemu"})
+"""Backends whose guests get a store view. A container guest overlays its
+store on the host, and an overlay does not see the binds a view is made
+of."""
+
+
 @dataclass(frozen=True)
 class MachineSpec:
     """What Nix knows about a guest; see ``mkTest`` in flake.nix."""
@@ -103,6 +110,11 @@ class MachineSpec:
     network: str | None = None
     address: str | None = None
     store: str = "/nix"
+    """The directory a guest gets as its `/nix`. The runner points it at
+    the guest's store view when the spec names `storePaths`."""
+    store_paths: Path | None = None
+    """A closureInfo's `store-paths`: the guest's closure, and all its view
+    holds."""
     boot: dict = field(default_factory=dict)
     """What a QEMU guest boots: kernel, initrd, toplevel and cmdline, as
     ``modules/qemu.nix`` worked them out.  Empty under UML, which boots the
@@ -128,6 +140,7 @@ class MachineSpec:
             network=data.get("network"),
             address=data.get("address"),
             store=data.get("store", "/nix"),
+            store_paths=Path(data["storePaths"]) if data.get("storePaths") else None,
             boot=data.get("boot", {}),
             forward=tuple(
                 forward.Rule.from_json(rule) for rule in data.get("forward", [])
@@ -271,6 +284,11 @@ class Machine:
             return
 
         self._rundir = Path(tempfile.mkdtemp(prefix=f"uml-{self.name}-"))
+        if self.spec.store_paths is not None and self.spec.backend in VIEWED:
+            view = storeview.build(
+                self._rundir / "nix", storeview.read_paths(self.spec.store_paths)
+            )
+            self.spec = replace(self.spec, store=str(view))
         self._agent_sock, self._guest_sock = socket.socketpair(
             socket.AF_UNIX, socket.SOCK_STREAM
         )
@@ -405,6 +423,7 @@ class Machine:
         self._cleanup = []
 
         if self._rundir is not None:
+            storeview.remove(self._rundir / "nix")
             shutil.rmtree(self._rundir, ignore_errors=True)
             self._rundir = None
 

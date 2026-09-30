@@ -39,9 +39,12 @@ let
     mkdir -p /proc
     mount -t proc none /proc
 
-    echo "uml-init: mounting the host's /nix ..."
+    # The runner names the guest's store view on the kernel command line;
+    # without one, the host's whole /nix.
+    store="''${UML_STORE:-/nix}"
+    echo "uml-init: mounting $store as /nix ..."
     mkdir -p /host/nix
-    mount -t hostfs none /host/nix -o /nix
+    mount -t hostfs none /host/nix -o "$store"
 
     echo "uml-init: overlaying a writable /nix ..."
     mkdir -p /nix /.nix-upper /.nix-work

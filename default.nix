@@ -946,6 +946,20 @@ let
     };
 
     /*
+      Does each guest see only its own closure, on both backends that get
+      a store view, and can it still add paths?
+    */
+    store-view = mkSession {
+      name = "store-view";
+      nodes.u.boot.uml.backend = "uml";
+      nodes.q.boot.uml.backend = "qemu";
+      phases.view = {
+        script = ./tests/phases/store-view.py;
+        after = [ "boot" ];
+      };
+    };
+
+    /*
       One guest of each backend on one segment, reaching each other over
       IP by name. `mixed` and `container-lan` each prove one pair; this
       holds all three at once.
