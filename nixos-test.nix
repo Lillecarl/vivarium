@@ -14,7 +14,10 @@
   - Every guest is on vlan 1 at 192.168.1.<n>, as nixos-test places it,
     and `networking.primaryIPAddress` says so.
   - `virtualisation.memorySize` and `.cores` become `vivarium.memory`
-    and `.cpus`.
+    and `.cpus`; `.diskSize`, when set, becomes `vivarium.diskSize`.
+  - `virtualisation.additionalPaths` becomes
+    `vivarium.nixDatabase.extraRoots`: the guest's store is the host's
+    already, so what a path needs is to be registered, not copied.
   - `testScript` becomes one phase after `boot`, run through
     `vivarium_runner.nixos_test`, which gives it nixos-test's API.
 
@@ -98,11 +101,19 @@ let
           type = types.ints.positive;
           default = 1;
         };
+        virtualisation.additionalPaths = mkOption {
+          type = types.listOf types.package;
+          default = [ ];
+        };
       };
       config = {
         networking.primaryIPAddress = address name;
         vivarium.memory = "${toString config.virtualisation.memorySize}M";
         vivarium.cpus = config.virtualisation.cores;
+        # NixOS declares `virtualisation.diskSize` for every system, with
+        # "auto" as its default; only a number is a size.
+        vivarium.diskSize = lib.mkIf (lib.isInt config.virtualisation.diskSize) config.virtualisation.diskSize;
+        vivarium.nixDatabase.extraRoots = map toString config.virtualisation.additionalPaths;
         vivarium.lan = {
           network = "vlan1";
           address = "${address name}/24";
