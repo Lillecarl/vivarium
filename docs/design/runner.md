@@ -61,17 +61,25 @@ The long record up to 2026-09-30 is `history/running-anywhere.md`.
   addresses and forwards everywhere. passt refuses to start without a
   user namespace; this holds inside the sandbox too
   (`uplink.sandboxedNoUserns` fails, `uplink.sandboxed` passes).
-- **Each guest sees only its own closure** in `/nix/store`: a store view
-  of read-only binds, in a user and mount namespace, in every run.
-  Without it a guest sees the host's whole store (`uplink.counted`:
-  92699 entries; `uplink.countedView`: 510, and a path outside the
-  closure is hidden).
-- **A guest's store is writable, and its Nix knows it.** The view is the
-  read-only lower layer of the guest's `/nix` overlay; new paths go to
-  the upper layer, so the guest's daemon builds and copies as usual. The
-  image's Nix database and the view come from one closureInfo
-  (`umlNixRegistration`: the system plus `nixDatabase.extraRoots`), so
-  the database lists exactly the paths the view holds.
+- **Each guest sees only its own closure** in `/nix/store`, in every
+  run. The runner builds a view per guest: a tmpfs with one read-only
+  bind per path, read-only as a whole through `mount_setattr`
+  (`uml_runner/storeview.py`). The closure is the closureInfo the
+  guest's Nix database is loaded from (`umlNixRegistration`), so the
+  database lists exactly what the view holds. Built for UML and QEMU:
+  virtiofsd serves the view, and a UML guest's `/init` mounts it from
+  `UML_STORE` on the kernel command line (`store-view`, by hand and
+  sandboxed; it fails with views off).
+- **A VM guest's store is writable through its own overlay**, inside its
+  own kernel, on its own disk. The host serves only the read-only view,
+  so the guest's build users need no ids in the run's namespace, and a
+  plain sandbox maps only one.
+- **A container guest's store is nixkube's layout:** a writable
+  directory on the host holding one read-only bind per closure path. New
+  paths sit beside the binds; a supplied path cannot be deleted or
+  overwritten. No overlay, because a host-side overlay cannot see
+  binds. Not built yet; container guests see the host's store until it
+  is.
 - **Guests talk to each other on `vec1`**: socketpairs, and a hub in the
   runner for three or more. It needs no namespace and no passt
   (`lan.stubBlocked`). UML, QEMU and container guests mix in one run
@@ -95,32 +103,22 @@ The long record up to 2026-09-30 is `history/running-anywhere.md`.
 
 ## Open
 
-1. **One store view per guest.** Decided: the runner builds each guest's
-   view as a directory in the run's one namespace. QEMU hands it to
-   virtiofsd's `--shared-dir`; a UML guest gets its path on the kernel
-   command line, and `/init` mounts hostfs from there, as it does for
-   `/artifacts`. Measured: the runner as root of its own namespace works
-   in both shapes. Root alone (`uplink.nsRoot`) and root plus
-   subordinate ids (`uplink.nsRootSubids`) both reach the internet
-   through passt, and a container guest passes with subordinate ids
-   (`container.nsRootSubids`: it builds in its own store, and the host
-   reaches its sshd).
-2. **The output schema:** the names of the outputs above, after
+1. **The output schema:** the names of the outputs above, after
    nixos-test's.
-3. **When does the quiet monitor exit:** at the first pause, or at the
+2. **When does the quiet monitor exit:** at the first pause, or at the
    verdict?
-4. **Python inside a guest:** wanted? The agent is a Python process
+3. **Python inside a guest:** wanted? The agent is a Python process
    already; `exec` today runs on the host.
-5. **A size budget for MCP replies.** A failed nixkube case returned
+4. **A size budget for MCP replies.** A failed nixkube case returned
    233k characters. Proposed: 16k a reply, 2k an event, the rest in a
    file the reply names.
-6. **Reusable modules go in `defaults`** (Carl's idea). Every guest
+5. **Reusable modules go in `defaults`** (Carl's idea). Every guest
    imports a reusable module through `defaults`, and the module brings
    its own scripts. An option that must differ per guest has no default,
    so each guest sets it or evaluation fails. Open: how a guest-level
    NixOS module adds a script to the run. The run would collect it from
    each guest's evaluated configuration.
-7. **Is a phase a systemd unit?** (Carl's idea.) Most work runs in the
+6. **Is a phase a systemd unit?** (Carl's idea.) Most work runs in the
    guests under systemd, and the host waits and checks. A unit that
    needs another guest to be ready waits for a file that the runner
    writes, not for a retry to succeed: a worker's `kubeadm join` unit
@@ -145,16 +143,14 @@ The long record up to 2026-09-30 is `history/running-anywhere.md`.
 
 ## Not measured
 
-- A whole run with one store view per guest.
-- QEMU with virtiofsd serving a view. Only its start is measured.
-- Binding a view with direct syscalls. From bash it costs about 6 ms a
-  path (510 paths in 3.0 s).
+- The time to build a view with direct syscalls. From bash it cost
+  about 6 ms a path (510 paths in 3.0 s).
 - A GitHub runner and a stock Ubuntu builder.
 
 ## Order of work
 
-1. Spike one store view per guest (open 1).
-2. Write the entrypoint and output schema here, for review (open 2).
+1. The container store: nixkube's layout.
+2. Write the entrypoint and output schema here, for review (open 1).
 3. Build it in the library; move this repository's tests, then
    nixkube's.
 4. The agent-experience items.
