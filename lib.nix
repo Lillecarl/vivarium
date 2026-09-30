@@ -700,10 +700,12 @@ rec {
             ) checkedConfig.ordered;
             # Each guest's closure, which the runner turns into its store
             # view. The same closureInfo its Nix database is loaded from.
+            # Not for `boot.uml.hostStore`, whose point is the host's whole
+            # store and its database under the guest's own.
             machines = map (
               machine:
               machineSpec machine
-              // {
+              // lib.optionalAttrs (!machine.boot.uml.hostStore.enable) {
                 storePaths = "${machine.system.build.umlNixRegistration}/store-paths";
               }
             ) machines;
