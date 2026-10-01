@@ -66,7 +66,8 @@ the rest of nixos-test's shape are its inputs, never the main
 function's. The main function stays as clean as if nixos-test did not
 exist. Built: `fromNixosTest` (`nixos-test.nix`) with nixos-test's
 script API in `vivarium_runner/nixos_test.py`. `nixos-tests` runs
-nixpkgs' simple-vm, systemd-no-tainted and oh-my-zsh sandboxed.
+nixpkgs' simple-vm, systemd-no-tainted and oh-my-zsh sandboxed;
+`nixos-screen-tests` runs cage and xterm, which read a screen.
 
 Built: the outputs below, `interactive`, and this repository's tests
 as `mkTest`s; the old `mkTest` is gone. nixkube's tests are all

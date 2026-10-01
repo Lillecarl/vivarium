@@ -1061,6 +1061,16 @@ let
     ] (name: fromNixosTest (pkgs.path + "/nixos/tests/${name}.nix"));
 
     /*
+      nixpkgs' tests that read a screen, unchanged: `cage` is Wayland and
+      sets `enableOCR`, `xterm` is X11 and is found by its script. By
+      hand: they need /dev/kvm.
+    */
+    nixos-screen-tests = lib.genAttrs [
+      "cage"
+      "xterm"
+    ] (name: fromNixosTest (pkgs.path + "/nixos/tests/${name}.nix"));
+
+    /*
       What the mapper carries beyond memory and cores, each a way a
       nixpkgs test passed under nixos-test and failed here.
 

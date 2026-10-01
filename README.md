@@ -137,8 +137,11 @@ vivarium.fromNixosTest (pkgs.path + "/nixos/tests/simple-vm.nix")
 The result is an ordinary `mkTest` run, with all the attributes above.
 `testScript` runs as one phase, through a shim that gives it the
 `nixosTest` API: `start_all`, `machine.succeed`, `wait_for_unit`,
-`subtest` and the rest. OCR and screenshots are not available.
-`nixos-tests` in `default.nix` runs three tests from nixpkgs this way.
+`subtest` and the rest. A test that reads a screen gets one: its nodes
+run under QEMU with `vivarium.display`, and `screenshot`, `send_chars`
+and `wait_for_text` work. `nixos-tests` in `default.nix` runs three
+tests from nixpkgs this way, and `nixos-screen-tests` runs `cage`
+(Wayland) and `xterm` (X11).
 
 ## What a run leaves behind
 

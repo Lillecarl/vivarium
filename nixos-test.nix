@@ -23,9 +23,17 @@
     store path it names is registered in each guest, as nixos-test's
     guests see every path their driver holds.
 
+  - A test that uses a screen gets one on every node: QEMU with
+    `vivarium.display`, sized by `virtualisation.resolution`. A test uses
+    one when it sets `enableOCR`, or when a string `testScript` calls a
+    screen method. A function `testScript` cannot be read for that
+    without evaluating the nodes it is given, so it needs `enableOCR`.
+    `virtualisation.qemu.options` is accepted and not used: the screen
+    is virtio-gpu, which is what those options ask for in the tests that
+    set them.
+
   Anything else nixos-test takes (`meta`, `sshBackdoor`, ...) is
-  accepted and not used. `enableOCR` is refused: nothing here reads a
-  screen.
+  accepted and not used.
 */
 {
   pkgs,
@@ -86,6 +94,14 @@ let
     }).config;
 
   names = lib.attrNames t.nodes ++ lib.attrNames t.containers;
+
+  screen =
+    t.enableOCR
+    ||
+      lib.isString t.testScript
+      &&
+        builtins.match ".*\\.(screenshot|send_key|send_chars|wait_for_text|get_screen_text[a-z_]*|wait_for_x|wait_for_window)\\(.*" t.testScript
+        != null;
   address = name: "192.168.1.${toString (lib.lists.findFirstIndex (n: n == name) 0 names + 1)}";
 
   # What a nixos-test node may say that a plain NixOS system does not.
@@ -107,6 +123,17 @@ let
           type = types.listOf types.package;
           default = [ ];
         };
+        virtualisation.resolution = mkOption {
+          type = types.attrsOf types.ints.positive;
+          default = {
+            x = 1024;
+            y = 768;
+          };
+        };
+        virtualisation.qemu.options = mkOption {
+          type = types.listOf types.str;
+          default = [ ];
+        };
       };
       config = {
         networking.primaryIPAddress = address name;
@@ -120,6 +147,11 @@ let
           network = "vlan1";
           address = "${address name}/24";
         };
+        vivarium.display = lib.mkIf (screen && config.vivarium.backend == "qemu") {
+          enable = true;
+          width = config.virtualisation.resolution.x;
+          height = config.virtualisation.resolution.y;
+        };
       };
     };
 
@@ -132,6 +164,7 @@ let
           node
           (compat name)
         ];
+        vivarium.backend = lib.mkIf screen "qemu";
       }) t.nodes
       // lib.mapAttrs (name: node: {
         imports = [
@@ -149,7 +182,10 @@ let
   # The guests alone, for a `testScript` that is a function of them. Not
   # the final run: its phase would depend on its own guests.
   script =
-    if lib.isFunction t.testScript then t.testScript { inherit ((mkTest run)) nodes; } else t.testScript;
+    if lib.isFunction t.testScript then
+      t.testScript { inherit ((mkTest run)) nodes; }
+    else
+      t.testScript;
 
   # The script's own string context, as a store path whose closure a
   # guest can register. Not `phase`: that is the run's, and a guest
@@ -169,14 +205,11 @@ let
         await run(vms, SCRIPT)
   '';
 in
-if t.enableOCR then
-  throw "${t.name}: enableOCR asks for a screen, and nothing here reads one"
-else
-  mkTest {
-    imports = [ run ];
-    defaults.vivarium.nixDatabase.extraRoots = [ "${scriptPaths}" ];
-    phases.test = {
-      script = phase;
-      after = [ "boot" ];
-    };
-  }
+mkTest {
+  imports = [ run ];
+  defaults.vivarium.nixDatabase.extraRoots = [ "${scriptPaths}" ];
+  phases.test = {
+    script = phase;
+    after = [ "boot" ];
+  };
+}

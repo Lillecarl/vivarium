@@ -73,6 +73,7 @@ def test_a_failed_unit_ends_the_wait() -> None:
 
 def test_what_has_no_equivalent_says_so() -> None:
     machine = nixos_test.Machine(FakeGuest("machine"))  # type: ignore[arg-type]
-    with pytest.raises(nixos_test.Unsupported, match="screenshot"):
-        machine.screenshot("shot")
-    assert not hasattr(machine, "send_key")
+    with pytest.raises(nixos_test.Unsupported, match="send_monitor_command"):
+        machine.send_monitor_command("info status")
+    assert not hasattr(machine, "send_monitor_command")
+    assert hasattr(machine, "send_key")

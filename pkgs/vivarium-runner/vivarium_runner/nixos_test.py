@@ -6,8 +6,9 @@ the event loop that owns the guests. The names and signatures follow
 `nixos/lib/test-driver` in nixpkgs, so a script runs unchanged; see
 `nixos-test.nix` for the half that maps the Nix.
 
-What has no equivalent -- screenshots, OCR, key presses, a QEMU monitor
--- raises NotImplementedError naming the call, rather than doing
+The screen calls -- screenshots, OCR, key presses -- go to
+:class:`Machine`'s own. What has no equivalent, such as a raw QEMU
+monitor, raises NotImplementedError naming the call, rather than doing
 something else.
 """
 
@@ -16,6 +17,7 @@ from __future__ import annotations
 import contextlib
 import functools
 import os
+import re
 import time
 import unittest
 from collections.abc import Callable, Iterator
@@ -25,6 +27,7 @@ import anyio
 import anyio.from_thread
 import anyio.to_thread
 
+from . import display
 from .machine import Machine as Guest
 
 DEFAULT_TIMEOUT = 900
@@ -43,6 +46,13 @@ def _seconds(timeout: Any) -> float:
     if timeout is None:
         return DEFAULT_TIMEOUT
     return timeout.total_seconds() if hasattr(timeout, "total_seconds") else float(timeout)
+
+
+def _delay(delay: Any) -> float:
+    """A key delay as nixos-test takes it: seconds, a timedelta, or None."""
+    if delay is None:
+        return 0.0
+    return delay.total_seconds() if hasattr(delay, "total_seconds") else float(delay)
 
 
 class Unsupported(NotImplementedError, AttributeError):
@@ -199,6 +209,65 @@ class Machine:
 
     def wait_for_console_text(self, regex: str, timeout: Any = None) -> None:
         self._call(self._guest.wait_for_console_text, regex, timeout=_seconds(timeout))
+
+    # The screen: a guest needs `vivarium.display`, which nixos-test.nix
+    # sets for a test that uses one.
+
+    def screenshot(self, filename: str) -> None:
+        print(f"[{self.name}] screenshot {self._call(self._guest.screenshot, filename)}", flush=True)
+
+    def send_key(self, key: str, delay: Any = 0.01, log: bool = True) -> None:
+        self._call(self._guest.send_key, display.CHAR_TO_KEY.get(key, key), delay=_delay(delay))
+
+    def send_chars(self, chars: str, delay: Any = 0.01) -> None:
+        self._call(self._guest.send_chars, chars, delay=_delay(delay))
+
+    def get_screen_text_variants(self) -> list[str]:
+        return [screen.text for screen in self._call(self._guest.read_screen)]
+
+    def get_screen_text(self) -> str:
+        return self._call(self._guest.screen_text)
+
+    def wait_for_text(self, regex: str, timeout: Any = DEFAULT_TIMEOUT) -> None:
+        # nixos-test searches the whole text, across lines; find_text
+        # matches within one, for a box. So poll the text.
+        pattern = re.compile(regex)
+        deadline = time.monotonic() + _seconds(timeout)
+        while True:
+            read = self.get_screen_text_variants()
+            if any(pattern.search(text) for text in read):
+                return
+            if time.monotonic() > deadline:
+                shot = self._call(self._guest.screenshot, None)
+                raise Exception(
+                    f"timed out waiting for {regex} on the screen of {self.name} ({shot}); OCR read:\n"
+                    + "\n---\n".join(read)
+                )
+            time.sleep(POLL)
+
+    def wait_for_x(self, timeout: Any = DEFAULT_TIMEOUT) -> None:
+        self._until(
+            "the X11 server",
+            lambda: self.execute(
+                "journalctl -b SYSLOG_IDENTIFIER=systemd | grep -q 'Reached target Current graphical'"
+                " && [ -e /tmp/.X11-unix/X0 ]"
+            )[0]
+            == 0,
+            timeout,
+        )
+
+    def get_window_names(self) -> list[str]:
+        return self.succeed(
+            r"xwininfo -root -tree | sed 's/.*0x[0-9a-f]* \"\([^\"]*\)\".*/\1/; t; d'"
+        ).splitlines()
+
+    def wait_for_window(self, regexp: str, timeout: Any = DEFAULT_TIMEOUT) -> None:
+        pattern = re.compile(regexp)
+        self._until(
+            f"a window {regexp}",
+            lambda: any(pattern.search(name) for name in self.get_window_names()),
+            timeout,
+        )
 
     def shutdown(self) -> None:
         self._call(self._guest.shutdown)
