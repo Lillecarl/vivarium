@@ -434,7 +434,9 @@ configuring on SUSE quickly, not for certifying anything.
   else fails under UML, with the reason in `images.nix`.
 
 `nix build --file . suse` proves it on openSUSE Leap 16.0: boot to
-`running` in about 12 seconds.
+`running` in about 12 seconds. `suse-ansible` is the workflow: a NixOS
+guest runs Ansible against SUSE over a segment, with the key in the
+seed's `userData`.
 
 ### What the segment carries, per backend
 

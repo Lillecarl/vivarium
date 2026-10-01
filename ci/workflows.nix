@@ -62,6 +62,14 @@ let
       timeoutMinutes = 30;
       backend = "uml";
     };
+    suse-ansible = {
+      # openSUSE Leap's own cloud image on the UML kernel, configured by
+      # Ansible from a NixOS guest: the kernel's XFS, btrfs and VFAT only
+      # matter here.
+      description = "Ansible configures openSUSE Leap over a segment";
+      timeoutMinutes = 30;
+      backend = "uml";
+    };
     screen = {
       description = "the host reads a guest's screen, types on it and points at it";
       timeoutMinutes = 30;
