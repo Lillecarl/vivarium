@@ -308,6 +308,10 @@ When you change `machine.py`, `net.py` or `forward.py`, run both:
 nix build .#lan .#lan.qemu --print-build-logs 2>&1 | tee /tmp/umlboth.log
 ```
 
+Segment wiring (`vivarium.interfaces`, NICs, MACs, renames) also runs
+`segments`: all three backends, several interfaces each, by hand
+(`--option extra-sandbox-paths /dev/net` for the container's tap).
+
 `.#lan.qemu` needs `/dev/kvm` and asks the daemon for the `kvm` feature,
 so it refuses to build where there is none rather than failing.
 

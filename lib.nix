@@ -137,6 +137,7 @@ rec {
       mtu = machine.vivarium.mtu;
       network = machine.vivarium.lan.network;
       address = machine.vivarium.lan.address;
+      interfaces = machine.vivarium.nics;
       forward = machine.vivarium.forward;
       # Both backends get a read-only root image of `vivarium.diskSize`
       # and a per-run copy-on-write layer over it. Only what is inside
@@ -245,26 +246,34 @@ rec {
       null
     else
       containerProbe {
-        tun = lib.any (machine: machine.vivarium.lan.network != null) containers;
+        tun = lib.any (machine: machine.vivarium.nics != [ ]) containers;
       };
 
   /*
-    Every peer that has a `vec1` address, by hostname, in each guest's
-    /etc/hosts. nixos-test writes the same from its `nodes`.
+    Every peer's segment addresses in each guest's /etc/hosts: each as
+    `<host>.<segment>`, and the `vec1` address as the bare hostname too,
+    as nixos-test writes it from its `nodes`.
   */
   peersModule =
     { lib, nodes, ... }:
+    let
+      bare = cidr: lib.head (lib.splitString "/" cidr);
+    in
     {
       networking.hosts = lib.mkMerge (
-        lib.mapAttrsToList (
-          _: peer:
-          let
-            address = peer.vivarium.lan.address;
-          in
-          lib.optionalAttrs (address != null) {
-            ${lib.head (lib.splitString "/" address)} = [ peer.networking.hostName ];
-          }
-        ) nodes
+        lib.concatLists (
+          lib.mapAttrsToList (
+            _: peer:
+            let
+              host = peer.networking.hostName;
+              address = peer.vivarium.lan.address;
+            in
+            lib.optional (address != null) { ${bare address} = [ host ]; }
+            ++ lib.concatMap (
+              nic: map (cidr: { ${bare cidr} = [ "${host}.${nic.segment}" ]; }) nic.addresses
+            ) peer.vivarium.nics
+          ) nodes
+        )
       );
     };
 

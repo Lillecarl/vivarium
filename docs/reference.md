@@ -222,6 +222,33 @@ an empty store.
 Three or more get a hub in the host process that floods frames between
 ports.
 
+A guest joins as many segments as it has `vivarium.interfaces`, and each
+attribute name is the interface's name in the guest:
+
+```nix
+nodes.leaf1.vivarium.interfaces = {
+  spine1.segment = "leaf1-spine1";                  # IPv6 link-local only
+  spine2.segment = "leaf1-spine2";
+  hosts = { segment = "leaf1"; addresses = [ "10.1.0.1/24" "fd01::1/64" ]; };
+};
+```
+
+So a router's configuration says `spine1` and means that link, on every
+backend. The runner gives NIC n of guest i the MAC `52:54:00:12:n:i`, and
+the guest renames the interface by it: UML first calls it `vecN`, QEMU
+names it after its PCI slot, and a container's tap gets the name directly.
+`vivarium.lan` is shorthand for `interfaces.vec1`.
+
+Where to say what:
+
+- in a guest, `/etc/hosts` has every peer address as `<host>.<segment>`,
+  and the `vec1` address as the bare hostname;
+- in a phase, `vm.interface("leaf1")` is the guest's interface on that
+  segment: its `name`, `addresses` and `mac`;
+- the run prints each guest's interfaces once, at boot.
+
+`nix build --file . segments` checks all three backends, by hand.
+
 What a segment carries is decided by frame size, not by anything on the
 host. AF_UNIX only lets about ten datagrams queue on a socket before the
 sender blocks — `net.unix.max_dgram_qlen`, which a Nix sandbox's network

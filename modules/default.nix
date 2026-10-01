@@ -108,6 +108,48 @@ let
       };
     };
   };
+
+  interfaceType = lib.types.submodule {
+    options = {
+      segment = lib.mkOption {
+        type = lib.types.str;
+        example = "fabric-a";
+        description = ''
+          The Ethernet segment this interface is plugged into.  Every
+          interface in a run naming the same segment is on one link.
+        '';
+      };
+      addresses = lib.mkOption {
+        type = lib.types.listOf lib.types.str;
+        default = [ ];
+        example = [
+          "10.0.0.1/31"
+          "fd00:a::1/64"
+        ];
+        description = ''
+          Static addresses with their prefix length, IPv4 or IPv6.  Empty
+          leaves the interface with its IPv6 link-local address alone.
+        '';
+      };
+    };
+  };
+
+  hex = n: (lib.optionalString (n < 16) "0") + lib.toHexString n;
+
+  # `vec1` first, so the `lan` shorthand keeps the NIC and MAC it always
+  # had; the rest by name. UML names NIC n `vecN` before the guest renames
+  # it, which is why no other `vecN` may be a name.
+  nicsOf =
+    interfaces: index:
+    let
+      names = lib.attrNames interfaces;
+      ordered = lib.optional (interfaces ? vec1) "vec1" ++ lib.filter (name: name != "vec1") names;
+    in
+    lib.imap1 (nic: name: {
+      inherit name nic;
+      inherit (interfaces.${name}) segment addresses;
+      mac = "52:54:00:12:${hex nic}:${hex index}";
+    }) ordered;
 in
 {
   imports = [
@@ -477,12 +519,41 @@ in
       };
     };
 
+    interfaces = lib.mkOption {
+      type = lib.types.attrsOf interfaceType;
+      default = { };
+      example = lib.literalExpression ''
+        {
+          spine1 = { segment = "leaf1-spine1"; };
+          spine2 = { segment = "leaf1-spine2"; };
+          hosts = { segment = "leaf1"; addresses = [ "10.1.0.1/24" ]; };
+        }
+      '';
+      description = ''
+        The guest's links to Ethernet segments, by interface name: the
+        attribute name is the interface's name inside the guest, on every
+        backend.  So a test, or a router's configuration, names the link
+        it means.  Each peer's address is in /etc/hosts as
+        `<host>.<segment>`.
+
+        `vec0` is the uplink and not one of these.  Names are at most 15
+        characters, and no `vecN` but `vec1`, which `lan` defines.
+      '';
+    };
+
+    nics = lib.mkOption {
+      internal = true;
+      readOnly = true;
+      description = "`interfaces` in NIC order, each with its NIC number and MAC.";
+    };
+
     lan = {
       network = lib.mkOption {
         type = lib.types.nullOr lib.types.str;
         default = null;
         example = "lan";
         description = ''
+          Shorthand for `interfaces.vec1.segment`.
           Name of an Ethernet segment to join on `vec1`.  Every machine
           in a test naming the same segment is wired together; the host
           runner creates the sockets.  Null leaves the guest with only
@@ -504,15 +575,37 @@ in
   };
 
   config = {
+    vivarium.interfaces.vec1 = lib.mkIf (config.vivarium.lan.network != null) {
+      segment = config.vivarium.lan.network;
+      addresses = lib.optional (config.vivarium.lan.address != null) config.vivarium.lan.address;
+    };
+    vivarium.nics = nicsOf config.vivarium.interfaces config.vivarium.index;
+
     vivarium.nixDatabase.extraRoots = map toString (
       lib.attrValues config.system.build.vivariumConfigurations
     );
 
     assertions = [
       {
-        assertion = config.vivarium.lan.address == null
-          -> config.vivarium.lan.network == null;
+        assertion = config.vivarium.lan.address != null -> config.vivarium.lan.network != null;
         message = "vivarium.lan.address is set but vivarium.lan.network is not, so nothing would be wired to vec1.";
+      }
+      {
+        assertion = lib.all (
+          name:
+          lib.stringLength name <= 15
+          && name != "lo"
+          && (name == "vec1" || builtins.match "vec[0-9]+" name == null)
+        ) (lib.attrNames config.vivarium.interfaces);
+        message = "vivarium.interfaces: a name is at most 15 characters, not lo, and no vecN but vec1.";
+      }
+      {
+        assertion =
+          let
+            segments = map (one: one.segment) (lib.attrValues config.vivarium.interfaces);
+          in
+          segments == lib.unique segments;
+        message = "vivarium.interfaces: two interfaces of one guest on one segment.";
       }
       {
         # Two wide rules on one address overlap on every port, and passt

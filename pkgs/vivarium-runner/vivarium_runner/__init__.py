@@ -6,10 +6,11 @@ talks to. A phase script is a coroutine over :class:`Machines`.
 """
 
 from .forward import ForwardError
-from .machine import Machine, MachineError, Machines, MachineSpec, Toolchain
+from .machine import Interface, Machine, MachineError, Machines, MachineSpec, Toolchain
 
 __all__ = [
     "ForwardError",
+    "Interface",
     "Machine",
     "MachineError",
     "MachineSpec",

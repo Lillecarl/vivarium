@@ -270,7 +270,7 @@ class Uml:
 
     name = "uml"
 
-    def launch(self, machine, rundir: Path, agent_fd: int, lan_fd: int | None) -> Launch:
+    def launch(self, machine, rundir: Path, agent_fd: int, lan_fds: dict[str, int]) -> Launch:
         spec, tools = machine.spec, machine.tools
         ram = physmem_dir(spec.memory)
         uml_dir, cleanup = socket_dir(rundir, f"{mconsole.UMID}/mconsole", ram)
@@ -316,10 +316,10 @@ class Uml:
             argv.append(f"{ARTIFACTS_ENV}={machine.artifacts}")
         # What /init mounts as the guest's /nix; see modules/image.nix.
         argv.append(f"{STORE_ENV}={spec.store}")
-        if lan_fd is not None:
-            argv.append(self._vec(1, lan_fd, spec.mtu))
+        for nic in spec.interfaces:
+            argv.append(self._vec(nic.nic, lan_fds[nic.name], spec.mtu, nic.mac))
 
-        pass_fds = tuple(fd for fd in (agent_fd, lan_fd) if fd is not None)
+        pass_fds = (agent_fd, *lan_fds.values())
         # The bridge finds passt on PATH.
         env = dict(os.environ, PATH=f"{tools.passt.parent}:{os.environ['PATH']}")
         # The guest's RAM, and nothing else: the runner's own temporary
@@ -349,7 +349,7 @@ class Uml:
         return mconsole.Mconsole(path, path.with_name("client"))
 
     @staticmethod
-    def _vec(unit: int, fd: int, mtu: int) -> str:
+    def _vec(unit: int, fd: int, mtu: int, mac: str | None = None) -> str:
         """A ``vecN=`` device on *fd*.
 
         ``mtu`` is only settable here: the driver leaves ``max_mtu`` at
@@ -362,7 +362,8 @@ class Uml:
         arrives bigger than a frame -- so it would only mean allocating
         64K per frame and throwing most of it away.
         """
-        return f"vec{unit}:transport=fd,fd={fd},depth={_VECTOR_DEPTH},mtu={mtu}"
+        address = f",mac={mac}" if mac else ""
+        return f"vec{unit}:transport=fd,fd={fd},depth={_VECTOR_DEPTH},mtu={mtu}{address}"
 
 
 class Qemu:
@@ -375,7 +376,7 @@ class Qemu:
 
     name = "qemu"
 
-    def launch(self, machine, rundir: Path, agent_fd: int, lan_fd: int | None) -> Launch:
+    def launch(self, machine, rundir: Path, agent_fd: int, lan_fds: dict[str, int]) -> Launch:
         # virtiofsd serves a file as the guest user that made it, so a
         # guest user outside the namespace's ids gets EINVAL on its first
         # write to /artifacts, minutes in. Fail here instead.
@@ -389,7 +390,7 @@ class Qemu:
         helpers: list[subprocess.Popen] = []
         opened: list[int] = []
         try:
-            return self._launch(machine, rundir, agent_fd, lan_fd, helpers, opened)
+            return self._launch(machine, rundir, agent_fd, lan_fds, helpers, opened)
         except BaseException:
             # Nothing owns these until a Launch carries them back, so a
             # failure between the first one and the last would leave a
@@ -409,7 +410,7 @@ class Qemu:
         machine,
         rundir: Path,
         agent_fd: int,
-        lan_fd: int | None,
+        lan_fds: dict[str, int],
         helpers: list[subprocess.Popen],
         opened: list[int],
     ) -> Launch:
@@ -493,16 +494,16 @@ class Qemu:
                 "-device",
                 f"vhost-user-fs-pci,chardev=artifacts,tag={ARTIFACTS_TAG}",
             ]
-        if lan_fd is not None:
+        for nic in spec.interfaces:
             argv += [
-                "-netdev", f"dgram,id=vec1,local.type=fd,local.str={lan_fd}",
+                "-netdev", f"dgram,id=nic{nic.nic},local.type=fd,local.str={lan_fds[nic.name]}",
                 "-device",
-                f"virtio-net-pci,netdev=vec1,mac={spec.mac(1)},host_mtu={spec.mtu}",
+                f"virtio-net-pci,netdev=nic{nic.nic},mac={nic.mac},host_mtu={spec.mtu}",
             ]
 
         pass_fds = tuple(
             fd
-            for fd in (agent_fd, passt_fd, lan_fd, vfs_fd, art_fd, *disk_fds)
+            for fd in (agent_fd, passt_fd, *lan_fds.values(), vfs_fd, art_fd, *disk_fds)
             if fd is not None
         )
         return Launch(
@@ -704,16 +705,17 @@ class Container:
 
     Needs what :func:`vivarium_runner.container.probe` checks, and says which of
     it is missing before anything starts. The uplink and the forwards are
-    pasta's, joined to the guest's namespaces by the launcher. ``vec1`` is
-    a tap relayed to the segment fd, so a segment mixes all three kinds.
+    pasta's, joined to the guest's namespaces by the launcher. Each segment
+    interface is a tap relayed to its segment fd, so a segment mixes all
+    three kinds.
     No memory control yet.
     """
 
     name = "container"
 
-    def launch(self, machine, rundir: Path, agent_fd: int, lan_fd: int | None) -> Launch:
+    def launch(self, machine, rundir: Path, agent_fd: int, lan_fds: dict[str, int]) -> Launch:
         spec, tools = machine.spec, machine.tools
-        missing = container.probe(tun=lan_fd is not None)
+        missing = container.probe(tun=bool(lan_fds))
         if missing:
             raise BackendError(
                 "this host cannot run a container guest:\n"
@@ -739,7 +741,7 @@ class Container:
         # tun the guest has no uplink; the sandbox has no network anyway.
         # The uplink is taken where a tap can be made and left out where it
         # cannot; the LAN is required, and probe() checked it above.
-        tun = lan_fd is not None or container.tap_fails() is None
+        tun = bool(lan_fds) or container.tap_fails() is None
 
         uid, gid = os.getuid(), os.getgid()
         if container.owns_ids():
@@ -773,11 +775,9 @@ class Container:
         )
         state = rundir / "crun"
         state.mkdir()
-        lan = (
-            ["--lan-fd", str(lan_fd), "--mtu", str(spec.mtu), "--mac", spec.mac(1)]
-            if lan_fd is not None
-            else []
-        )
+        lan = ["--mtu", str(spec.mtu)]
+        for nic in spec.interfaces:
+            lan += ["--lan", f"{lan_fds[nic.name]},{nic.name},{nic.mac}"]
         # A delegated scope of its own where the user's systemd makes one:
         # a cgroup the guest's systemd writes in, its memory counted apart
         # from every other guest's, and `vivarium.memory` as its limit.
@@ -812,7 +812,7 @@ class Container:
                     else []
                 ),
             ],
-            pass_fds=(lan_fd,) if lan_fd is not None else (),
+            pass_fds=tuple(lan_fds.values()),
             # A Nix-wrapped program carries its imports in the script, not
             # the environment, so the launcher gets this process's path.
             env=dict(os.environ, PYTHONPATH=os.pathsep.join(filter(None, sys.path))),

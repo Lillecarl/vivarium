@@ -95,6 +95,27 @@ class Toolchain:
 
 
 @dataclass(frozen=True)
+class Interface:
+    """One of `vivarium.interfaces`: a link to a segment, named in the guest."""
+
+    name: str
+    nic: int
+    segment: str
+    addresses: tuple[str, ...]
+    mac: str
+
+    @classmethod
+    def from_json(cls, data: dict) -> Interface:
+        return cls(
+            name=data["name"],
+            nic=data["nic"],
+            segment=data["segment"],
+            addresses=tuple(data.get("addresses", [])),
+            mac=data["mac"],
+        )
+
+
+@dataclass(frozen=True)
 class MachineSpec:
     """What Nix knows about a guest; see ``mkTest`` in flake.nix."""
 
@@ -124,6 +145,8 @@ class MachineSpec:
     configurations: dict[str, str] = field(default_factory=dict)
     """`vivarium.configurations`: each name and its system, which the
     guest's Nix database already holds."""
+    interfaces: tuple[Interface, ...] = ()
+    """The guest's segment links, in NIC order."""
     forward: tuple[forward.Rule, ...] = ()
     """Host-side port forwards.  Addresses in these are still None until
     :func:`vivarium_runner.forward.resolve` has run over every machine in the
@@ -149,6 +172,7 @@ class MachineSpec:
             boot=data.get("boot", {}),
             toplevel=data.get("toplevel"),
             configurations=data.get("configurations", {}),
+            interfaces=tuple(Interface.from_json(one) for one in data.get("interfaces", [])),
             forward=tuple(
                 forward.Rule.from_json(rule) for rule in data.get("forward", [])
             ),
@@ -216,7 +240,7 @@ class Machine:
         spec: MachineSpec,
         tools: Toolchain,
         *,
-        lan_fd: int | None = None,
+        lan_fds: dict[str, int] | None = None,
         artifacts: Path | None = None,
         boot_timeout: float = 180,
         # Generous, because several guests on a loaded builder are slow
@@ -230,7 +254,8 @@ class Machine:
         self.spec = spec
         self.tools = tools
         self.backend = backends.get(spec.backend)
-        self.lan_fd = lan_fd
+        self.lan_fds = lan_fds or {}
+        """Each interface's segment fd, by interface name."""
         self.artifacts = artifacts
         # `report.RUN` is the process-wide one, which is right while a
         # process holds a single run. A session passes its own, because
@@ -314,7 +339,7 @@ class Machine:
 
         try:
             launch = self.backend.launch(
-                self, self._rundir, self._guest_sock.fileno(), self.lan_fd
+                self, self._rundir, self._guest_sock.fileno(), self.lan_fds
             )
         except backends.BackendError as error:
             # A host that lacks something is a reason, not a crash: said
@@ -329,7 +354,7 @@ class Machine:
         self._spare_fds = [
             fd
             for fd in launch.pass_fds
-            if fd not in (self._guest_sock.fileno(), self.lan_fd)
+            if fd != self._guest_sock.fileno() and fd not in self.lan_fds.values()
         ]
         self._log(f"exec: {' '.join(launch.argv)}")
 
@@ -837,6 +862,15 @@ class Machine:
     async def listening(self) -> list[int]:
         """Guest ports with something listening on them."""
         return await self._ask("listening", self._agent.listening(), _SYSTEMD_TIMEOUT)
+
+    def interface(self, segment: str) -> Interface:
+        """This guest's interface on *segment*: its name in the guest, its
+        addresses and its MAC."""
+        for nic in self.spec.interfaces:
+            if nic.segment == segment:
+                return nic
+        known = ", ".join(f"{nic.name} on {nic.segment}" for nic in self.spec.interfaces) or "none"
+        raise MachineError(f"[{self.name}] no interface on segment {segment!r}; it has: {known}")
 
     def reachable(self, guest_port: int) -> list[str]:
         """Where *guest_port* answers from the host, as ``address:port``.

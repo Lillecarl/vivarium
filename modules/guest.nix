@@ -88,8 +88,8 @@ in
     depends = [ "/nix" ];
   };
 
-  # vec0 is the passt uplink (NAT plus the forwarded ssh port); vec1, if
-  # this guest is on a segment, is an L2 link to its peers.
+  # vec0 is the passt uplink (NAT plus the forwarded ssh port); each of
+  # `vivarium.interfaces` is an L2 link to the peers on its segment.
   networking = {
     useNetworkd = true;
     useDHCP = false;
@@ -118,16 +118,37 @@ in
       "1.1.1.1"
       "8.8.8.8"
     ];
-    interfaces.vec0.useDHCP = true;
-    interfaces.vec1 = lib.mkIf (cfg.lan.network != null) (
-      {
-        useDHCP = false;
-      }
-      // lib.optionalAttrs (cfg.lan.address != null) {
-        ipv4.addresses = [ (parseCidr cfg.lan.address) ];
-      }
+    interfaces = {
+      vec0.useDHCP = true;
+    }
+    // lib.listToAttrs (
+      map (
+        nic:
+        let
+          v6 = lib.filter (lib.hasInfix ":") nic.addresses;
+          v4 = lib.filter (address: !lib.hasInfix ":" address) nic.addresses;
+        in
+        lib.nameValuePair nic.name {
+          useDHCP = false;
+          ipv4.addresses = map parseCidr v4;
+          ipv6.addresses = map parseCidr v6;
+        }
+      ) cfg.nics
     );
   };
+
+  # Each segment interface by its MAC, which the runner gives NIC n of
+  # guest i as 52:54:00:12:n:i. UML names it `vecN` and QEMU after its PCI
+  # slot; the guest renames either. A container's tap has its name already.
+  systemd.network.links = lib.listToAttrs (
+    map (
+      nic:
+      lib.nameValuePair "10-${nic.name}" {
+        matchConfig.MACAddress = nic.mac;
+        linkConfig.Name = nic.name;
+      }
+    ) cfg.nics
+  );
   # Take the address and the route from DHCP, not the resolver.  passt
   # advertises one, resolved adds it to the link, and a link server is
   # queried beside the global ones above -- so whichever answers first

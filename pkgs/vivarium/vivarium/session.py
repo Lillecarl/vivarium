@@ -339,14 +339,29 @@ class Session:
         tools = Toolchain.from_json(toolchain)
         specs = [MachineSpec.from_json(m) for m in machines]
 
+        # A segment's members are `<machine>/<interface>`: neither name
+        # can hold a slash.
         segments: dict[str, list[str]] = defaultdict(list)
         for one in specs:
-            if one.network:
-                segments[one.network].append(one.name)
+            for nic in one.interfaces:
+                segments[nic.segment].append(f"{one.name}/{nic.name}")
+            if one.interfaces:
+                self.emit(
+                    Kind.BOOT,
+                    f"{one.name}: "
+                    + "; ".join(
+                        f"{nic.name} on {nic.segment}"
+                        + (f" {' '.join(nic.addresses)}" if nic.addresses else "")
+                        for nic in one.interfaces
+                    ),
+                    machine=one.name,
+                )
         self._lans = build_lans(segments)
-        lan_fd = {
-            name: fd for lan in self._lans for name, fd in lan.fds.items()
-        }
+        lan_fds: dict[str, dict[str, int]] = defaultdict(dict)
+        for lan in self._lans:
+            for member, fd in lan.fds.items():
+                machine, nic = member.split("/")
+                lan_fds[machine][nic] = fd
 
         self.emit(Kind.BOOT, f"booting {', '.join(one.name for one in specs)}")
         self.artifacts.mkdir(parents=True, exist_ok=True)
@@ -363,7 +378,7 @@ class Session:
                 Machine(
                     one,
                     tools,
-                    lan_fd=lan_fd.get(one.name),
+                    lan_fds=lan_fds.get(one.name),
                     artifacts=self._guest_artifacts(one.name),
                     recorder=self.report,
                     offline=self.offline,

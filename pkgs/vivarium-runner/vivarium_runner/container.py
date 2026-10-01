@@ -758,11 +758,11 @@ def tap_relay(pid: int, lan: int, name: str, mtu: int, mac: str) -> int:
                 pass
 
 
-def _lan(pid: int, fd: int, mtu: int, mac: str) -> subprocess.Popen:
+def _lan(pid: int, fd: int, name: str, mtu: int, mac: str) -> subprocess.Popen:
     return subprocess.Popen(
         [
             sys.executable, "-m", "vivarium_runner.crun_launch", "tap",
-            "--pid", str(pid), "--fd", str(fd), "--mtu", str(mtu), "--mac", mac,
+            "--pid", str(pid), "--fd", str(fd), "--name", name, "--mtu", str(mtu), "--mac", mac,
         ],
         pass_fds=(fd,),
         start_new_session=True,
@@ -830,9 +830,13 @@ def _parse(argv: list[str]):
     run.add_argument("--state", required=True)
     run.add_argument("--bundle", required=True)
     run.add_argument("--name", required=True)
-    run.add_argument("--lan-fd", type=int)
+    run.add_argument(
+        "--lan",
+        action="append",
+        default=[],
+        help="FD,NAME,MAC: one segment interface; repeat for each",
+    )
     run.add_argument("--mtu", type=int, default=1500)
-    run.add_argument("--mac")
     run.add_argument("--pasta-log")
     run.add_argument("pasta", nargs=argparse.REMAINDER)
     check = sub.add_parser("probe", help="say what this host lacks, and exit 1 if anything")
@@ -843,6 +847,7 @@ def _parse(argv: list[str]):
     tap = sub.add_parser("tap")
     tap.add_argument("--pid", type=int, required=True)
     tap.add_argument("--fd", type=int, required=True)
+    tap.add_argument("--name", required=True)
     tap.add_argument("--mtu", type=int, required=True)
     tap.add_argument("--mac", required=True)
     return parser.parse_args(argv)
@@ -857,7 +862,7 @@ def main(argv: list[str] | None = None) -> int:
     """
     args = _parse(sys.argv[1:] if argv is None else argv)
     if args.mode == "tap":
-        return tap_relay(args.pid, args.fd, "vec1", args.mtu, args.mac)
+        return tap_relay(args.pid, args.fd, args.name, args.mtu, args.mac)
     if args.mode == "probe":
         return _report(args.tun)
     if args.mode == "attach":
@@ -915,8 +920,9 @@ def main(argv: list[str] | None = None) -> int:
                 (Path(args.state) / INIT_PID).write_text(f"{pid}\n")
                 if uplink:
                     helpers.append(_uplink(pid, Path(uplink[0]), uplink[1:]))
-                if args.lan_fd is not None:
-                    helpers.append(_lan(pid, args.lan_fd, args.mtu, args.mac))
+                for lan in args.lan:
+                    fd, nic, mac = lan.split(",")
+                    helpers.append(_lan(pid, int(fd), nic, args.mtu, mac))
             except (RuntimeError, subprocess.CalledProcessError) as error:
                 # On the console, which is where Machine looks for why a
                 # guest did not come up.

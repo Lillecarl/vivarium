@@ -144,21 +144,14 @@ lib.mkIf (cfg.backend == "qemu") {
   };
 
   /*
-    Name the interfaces the way the UML guest does, so guest.nix and every
-    test are one file for both backends.
-
-    UML takes the name from the `vecN=` argument.  QEMU names a virtio-net
-    device after its PCI slot, so the runner hands out a fixed MAC per
-    interface and the guest renames by it.  The MAC carries the machine's
-    index, because two guests on one segment with one MAC is not a segment.
+    Name the uplink `vec0`, as UML's `vec0=` argument names it.  QEMU names
+    a virtio-net device after its PCI slot, so the runner gives it a fixed
+    MAC and the guest renames by it.  guest.nix does the same for each
+    segment interface, on every backend.
   */
   systemd.network.links."10-vec0" = {
     matchConfig.MACAddress = "52:54:00:12:00:${hex cfg.index}";
     linkConfig.Name = "vec0";
-  };
-  systemd.network.links."10-vec1" = lib.mkIf (cfg.lan.network != null) {
-    matchConfig.MACAddress = "52:54:00:12:01:${hex cfg.index}";
-    linkConfig.Name = "vec1";
   };
 
   /*
