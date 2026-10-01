@@ -62,6 +62,10 @@ let
       timeoutMinutes = 30;
       backend = "uml";
     };
+    screen = {
+      description = "the host reads a guest's screen, types on it and points at it";
+      timeoutMinutes = 30;
+    };
     iperf = {
       description = "what a segment between two guests carries";
       timeoutMinutes = 45;

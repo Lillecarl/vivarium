@@ -879,9 +879,8 @@ let
     /*
       Can a test read a guest's screen, type on it and point at it?
 
-      By hand, not in CI: it needs /dev/kvm. `desk` has a screen with a
-      getty on tty1; `blind` is a UML guest in the same run, the negative
-      control for a guest with no screen.
+      `desk` has a screen with a getty on tty1; `blind` has none, the
+      negative control. CI runs `screen.qemu`, where `blind` is QEMU too.
     */
     screen = mkTest {
       name = "screen";

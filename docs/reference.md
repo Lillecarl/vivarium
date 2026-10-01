@@ -400,8 +400,8 @@ Two facts, measured:
 - OCR reads PPM, not PNG: nixos-test's `imagemagick_light` has no PNG
   codec. `screenshot` writes PNG.
 
-`nix build --file . screen` proves each claim with a negative control,
-by hand (it needs `/dev/kvm`). Under UML and containers, `vivarium.display`
+`nix build --file . screen` proves each claim with a negative control;
+CI runs it on the QEMU lane. Under UML and containers, `vivarium.display`
 fails the evaluation, and a method fails naming the option.
 
 ### What the segment carries, per backend
