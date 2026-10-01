@@ -765,6 +765,10 @@ class Machine:
         runs it: the switch may restart the unit that started it, and here
         that is the agent. Exit 4 means a unit failed; *check* raises on any
         nonzero exit."""
+        if self.spec.boot.get("image"):
+            raise MachineError(
+                f"[{self.name}] boots a cloud image (`vivarium.image`), and has no NixOS to switch"
+            )
         if name is None:
             if self.spec.toplevel is None:
                 raise MachineError(f"[{self.name}] the spec names no booted system")
@@ -808,6 +812,10 @@ class Machine:
         `system.build.vivariumNixRegistration`. Its paths go into the
         guest's store view and its registration into the guest's Nix
         database. Returns the paths that were new to the view.
+
+        A cloud image guest (`vivarium.image`) has no Nix database: the
+        paths become visible under its /nix, and that is all, which is
+        enough to run a tool the host built.
         """
         paths = [*storeview.read_paths(Path(info) / "store-paths"), info]
         is_container = self.spec.backend == "container"
@@ -820,8 +828,9 @@ class Machine:
         # A VM's overlay keeps a negative dentry for a name looked up before
         # it existed. A container has no overlay here, and may not drop caches.
         drop = "" if is_container else "echo 2 > /proc/sys/vm/drop_caches && "
+        load = "true" if self.spec.boot.get("image") else f"nix-store --load-db < {shlex.quote(info)}/registration"
         rc, out = await self.execute(
-            f"{drop}nix-store --load-db < {shlex.quote(info)}/registration",
+            f"{drop}{load}",
             label=f"add_closure {Path(info).name}",
         )
         if rc != 0:

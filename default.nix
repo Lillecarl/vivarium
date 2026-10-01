@@ -36,6 +36,7 @@ let
     runner
     session
     typeCheck
+    images
     ;
 
   # Two guests on one segment, addressed statically.
@@ -872,6 +873,35 @@ let
       nodes.plain = { };
       phases.kvm = {
         script = ./tests/phases/nested.py;
+        after = [ "boot" ];
+      };
+    };
+
+    /*
+      Does openSUSE Leap boot under UML, with the agent in it?
+
+      The image is SUSE's own cloud image; the agent, the journal stream
+      and /artifacts come from a cloud-init seed. See
+      modules/image-guest.nix.
+    */
+    suse = mkTest {
+      name = "suse";
+      # A closure the guest does not boot with, for `add_closure`. Not
+      # plain python3: the agent runs on it, so the guest has it already.
+      settings.python =
+        let
+          env = pkgs.python3.withPackages (ps: [ ps.requests ]);
+        in
+        {
+          closure = "${pkgs.closureInfo { rootPaths = [ env ]; }}";
+          bin = "${env}/bin/python3";
+        };
+      nodes.suse = {
+        vivarium.image = images.opensuse-leap-16_0;
+        vivarium.memory = "1024M";
+      };
+      phases.suse = {
+        script = ./tests/phases/suse.py;
         after = [ "boot" ];
       };
     };
@@ -1730,8 +1760,8 @@ in
 tests
 // {
   # The library, for a caller that writes its own test.
-  inherit mkNode mkTest fromNixosTest runner session typeCheck;
-  lib = { inherit mkNode mkTest fromNixosTest runner session typeCheck; };
+  inherit mkNode mkTest fromNixosTest runner session typeCheck images;
+  lib = { inherit mkNode mkTest fromNixosTest runner session typeCheck images; };
 
   inherit demo store k8s-pull uplink incr;
   inherit (demo.config.system.build) vivariumRunner vivariumRootImage toplevel;

@@ -156,6 +156,7 @@ in
     ./container.nix
     ./guest.nix
     ./image.nix
+    ./image-guest.nix
     ./qemu.nix
     ./store.nix
   ];

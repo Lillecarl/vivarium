@@ -31,7 +31,11 @@ TTY = os.environ.get("VIVARIUM_AGENT_DEVICE", "/dev/ttyS0")
 """Where the host is listening.  ttyS0 under UML.  Under QEMU the console
 takes ttyS0 -- a stock kernel prints there from its first line, before any
 virtio driver exists -- and the agent gets hvc0 instead."""
-GUEST_PATH = "/run/current-system/sw/bin:/run/current-system/sw/sbin"
+GUEST_PATH = os.environ.get(
+    "VIVARIUM_GUEST_PATH", "/run/current-system/sw/bin:/run/current-system/sw/sbin"
+)
+"""Another distribution's guest has no /run/current-system, and sets its
+own; see modules/image-guest.nix."""
 
 
 def _sh(

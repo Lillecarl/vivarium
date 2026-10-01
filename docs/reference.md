@@ -404,6 +404,38 @@ Two facts, measured:
 CI runs it on the QEMU lane. Under UML and containers, `vivarium.display`
 fails the evaluation, and a method fails naming the option.
 
+### Another distribution, under UML
+
+`vivarium.image` boots a distribution's own cloud image under the UML
+kernel instead of NixOS. `vivarium.images` holds the ones known to boot:
+
+```nix
+nodes.suse.vivarium.image = vivarium.images.opensuse-leap-16_0 // {
+  userData.users = [ { name = "ansible"; ssh_authorized_keys = [ key ]; } ];
+};
+```
+
+It is the distribution's userspace on our kernel: good for building and
+configuring on SUSE quickly, not for certifying anything.
+
+- The runner converts the qcow2 to a sparse raw file in the run
+  directory. The store keeps the qcow2: a NAR cannot hold a sparse file.
+- A cloud-init NoCloud seed, built in Nix, mounts the guest's store view
+  at `/nix` and the artifacts at `/artifacts` over hostfs, then starts
+  the vivarium agent and the journal stream from the store. `succeed`,
+  journal events and `/artifacts` work as on NixOS. Add your own
+  cloud-config with `userData`.
+- Interfaces come from a cloud-init network-config: vec0 by DHCP from
+  passt, each of `vivarium.interfaces` matched by its MAC and renamed.
+- `add_closure` makes a closure the host built visible under `/nix`,
+  which runs a Nix-built tool on SUSE. `switch_to` refuses.
+- With no initrd, `systemd-remount-fs` runs before udev has made
+  `/dev/disk/by-uuid` and fails, so it is masked. Each image masks what
+  else fails under UML, with the reason in `images.nix`.
+
+`nix build --file . suse` proves it on openSUSE Leap 16.0: boot to
+`running` in about 12 seconds.
+
 ### What the segment carries, per backend
 
 `.#iperf` and `.#iperf.qemu` are the same two guests on the same segment,

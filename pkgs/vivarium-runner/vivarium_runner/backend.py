@@ -287,10 +287,8 @@ class Uml:
             ),
             *forward.to_args(machine.forward),
             str(tools.kernel),
-            f"ubd0={rundir}/cow,{spec.image}",
-            "root=/dev/ubda",
+            *self._root(tools, rundir, spec),
             "rw",
-            "init=/init",
             f"mem={spec.memory}",
             f"ssl0=fd:{agent_fd}",
             # Catch the guest's syscalls with a seccomp filter instead of
@@ -347,6 +345,32 @@ class Uml:
         a `sockaddr_un`.
         """
         return mconsole.Mconsole(path, path.with_name("client"))
+
+    @staticmethod
+    def _root(tools, rundir: Path, spec) -> list[str]:
+        """The disks and the root, for a NixOS image or a cloud image.
+
+        A cloud image is qcow2, which ubd cannot read. It becomes a raw
+        file in the run directory, sparse, and the guest writes to it
+        directly: it is this run's copy already, so it needs no cow.
+        """
+        image = spec.boot.get("image")
+        if image is None:
+            return [f"ubd0={rundir}/cow,{spec.image}", "root=/dev/ubda", "init=/init"]
+        raw = rundir / "disk.raw"
+        subprocess.run(
+            [str(tools.qemu_img), "convert", "-O", "raw", str(spec.image), str(raw)],
+            check=True,
+            capture_output=True,
+        )
+        return [
+            f"ubd0={raw}",
+            # The seed, read-only: cloud-init finds it by its label.
+            f"ubd1r={image['seed']}",
+            f"root=/dev/ubda{image['partition']}",
+            f"init={image['init']}",
+            *image["kernelParams"],
+        ]
 
     @staticmethod
     def _vec(unit: int, fd: int, mtu: int, mac: str | None = None) -> str:

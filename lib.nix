@@ -32,6 +32,13 @@ rec {
   */
   session = pkgs.callPackage ./pkgs/vivarium { vivarium-runner = runner; };
 
+  /**
+    Other distributions' cloud images, for `vivarium.image`:
+
+        nodes.suse.vivarium.image = vivarium.images.opensuse-leap-16_0;
+  */
+  images = import ./images.nix { inherit (pkgs) fetchurl; };
+
   /*
     pyright over a caller's test scripts, against this library.
 
@@ -139,13 +146,25 @@ rec {
       address = machine.vivarium.lan.address;
       interfaces = machine.vivarium.nics;
       forward = machine.vivarium.forward;
-      # Both backends get a read-only root image of `vivarium.diskSize`
-      # and a per-run copy-on-write layer over it. Only what is inside
-      # differs: UML boots `/init` from it, QEMU mounts it as `/`.
-      image = "${machine.system.build.vivariumRootImage}";
-      toplevel = "${machine.system.build.toplevel}";
-      configurations = lib.mapAttrs (_: system: "${system}") machine.system.build.vivariumConfigurations;
     }
+    // (
+      if machine.vivarium.image != null then
+        {
+          # Another distribution's cloud image. Its NixOS system is never
+          # built; see modules/image-guest.nix.
+          image = "${machine.vivarium.image.disk}";
+          boot.image = machine.system.build.vivariumImageGuest;
+        }
+      else
+        {
+          # Both backends get a read-only root image of `vivarium.diskSize`
+          # and a per-run copy-on-write layer over it. Only what is inside
+          # differs: UML boots `/init` from it, QEMU mounts it as `/`.
+          image = "${machine.system.build.vivariumRootImage}";
+          toplevel = "${machine.system.build.toplevel}";
+          configurations = lib.mapAttrs (_: system: "${system}") machine.system.build.vivariumConfigurations;
+        }
+    )
     // lib.optionalAttrs (machine.vivarium.backend == "qemu") {
       boot = machine.system.build.qemuBoot;
     }
@@ -178,6 +197,12 @@ rec {
     // lib.optionalAttrs (uml != [ ]) {
       kernel = "${(lib.head uml).system.build.umlKernel}/linux";
       bridge = lib.getExe (lib.head uml).system.build.umlPasstBridge;
+    }
+    # UML reads raw disks, and a cloud image is qcow2: the runner converts
+    # it into the run directory, sparse, rather than the store holding the
+    # raw form, which a NAR cannot keep sparse.
+    // lib.optionalAttrs (lib.any (machine: machine.vivarium.image != null) machines) {
+      qemuImg = "${pkgs.qemu_kvm}/bin/qemu-img";
     }
     // lib.optionalAttrs (on "qemu" != [ ]) {
       qemu = "${pkgs.qemu_kvm}/bin/qemu-system-x86_64";
@@ -458,7 +483,11 @@ rec {
               machine:
               machineSpec machine
               // lib.optionalAttrs (!machine.vivarium.hostStore.enable) {
-                storePaths = "${machine.system.build.vivariumNixRegistration}/store-paths";
+                storePaths =
+                  if machine.vivarium.image != null then
+                    "${machine.system.build.vivariumImageClosure}/store-paths"
+                  else
+                    "${machine.system.build.vivariumNixRegistration}/store-paths";
               }
             ) machines;
           }
