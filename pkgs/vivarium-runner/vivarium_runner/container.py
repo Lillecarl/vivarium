@@ -19,6 +19,7 @@ Three pieces, each for a fact measured before it was written:
 
 from __future__ import annotations
 
+import ctypes
 import json
 import os
 import pwd
@@ -31,6 +32,8 @@ import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
+
+from . import storeview
 
 AGENT_DIR = "/run/host/agent"
 """Where the guest sees the host's agent directory."""
@@ -601,6 +604,45 @@ def _shares_userns(pid: int) -> bool:
     return os.readlink(f"/proc/{pid}/ns/user") == os.readlink("/proc/self/ns/user")
 
 
+_SYS_OPEN_TREE = 428
+_SYS_MOVE_MOUNT = 429
+_OPEN_TREE_CLONE = 1
+_MOVE_MOUNT_F_EMPTY_PATH = 4
+
+INIT_PID = "init.pid"
+"""In crun's state directory: the guest's init, for `attach`."""
+
+
+def attach(pid: int, paths: list[str]) -> int:
+    """Mount store paths at their own place in *pid*'s mount namespace.
+
+    Each is cloned here with `open_tree`, read-only, while the host's
+    store is reachable; then this process joins the guest's namespaces
+    and moves each clone onto the mount point `storeview.add` made. A
+    process of its own: joining a mount namespace needs a single thread.
+    """
+    libc = ctypes.CDLL(None, use_errno=True)
+    trees: list[tuple[str, int]] = []
+    for path in paths:
+        fd = libc.syscall(_SYS_OPEN_TREE, -100, path.encode(), _OPEN_TREE_CLONE | os.O_CLOEXEC)
+        if fd < 0:
+            raise OSError(ctypes.get_errno(), f"open_tree {path}")
+        storeview.read_only_tree(fd, path)
+        trees.append((path, fd))
+    joins = [("mnt", os.CLONE_NEWNS)]
+    if not _shares_userns(pid):
+        joins.insert(0, ("user", os.CLONE_NEWUSER))
+    for kind, flag in joins:
+        ns = os.open(f"/proc/{pid}/ns/{kind}", os.O_RDONLY)
+        os.setns(ns, flag)
+        os.close(ns)
+    for path, fd in trees:
+        if libc.syscall(_SYS_MOVE_MOUNT, fd, b"", -100, path.encode(), _MOVE_MOUNT_F_EMPTY_PATH) != 0:
+            raise OSError(ctypes.get_errno(), f"move_mount {path}")
+        os.close(fd)
+    return 0
+
+
 STATE_WAIT = 10.0
 """Seconds for crun to record a container it has already sent a pty for."""
 
@@ -795,6 +837,9 @@ def _parse(argv: list[str]):
     run.add_argument("pasta", nargs=argparse.REMAINDER)
     check = sub.add_parser("probe", help="say what this host lacks, and exit 1 if anything")
     check.add_argument("--tun", action="store_true", help="a LAN will be asked for")
+    bind = sub.add_parser("attach", help="mount store paths inside a running guest")
+    bind.add_argument("--pid", type=int, required=True)
+    bind.add_argument("paths", nargs="+")
     tap = sub.add_parser("tap")
     tap.add_argument("--pid", type=int, required=True)
     tap.add_argument("--fd", type=int, required=True)
@@ -815,6 +860,8 @@ def main(argv: list[str] | None = None) -> int:
         return tap_relay(args.pid, args.fd, "vec1", args.mtu, args.mac)
     if args.mode == "probe":
         return _report(args.tun)
+    if args.mode == "attach":
+        return attach(args.pid, args.paths)
     _ensure_cgroup2()
 
     name = args.name
@@ -862,9 +909,10 @@ def main(argv: list[str] | None = None) -> int:
                 # status.
                 continue
             master = fds[0]
-        if master is not None and (uplink or args.lan_fd is not None):
+        if master is not None:
             try:
                 pid = _init_pid(crun, name, proc)
+                (Path(args.state) / INIT_PID).write_text(f"{pid}\n")
                 if uplink:
                     helpers.append(_uplink(pid, Path(uplink[0]), uplink[1:]))
                 if args.lan_fd is not None:

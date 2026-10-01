@@ -24,6 +24,7 @@ import shutil
 import signal
 import socket
 import subprocess as sync_subprocess
+import sys
 import tempfile
 import time
 from asyncio import subprocess
@@ -723,8 +724,10 @@ class Machine:
         check: bool = True,
         timeout: float = 300,
     ) -> tuple[int, str]:
-        """Switch to `vivarium.configurations.<name>`, or back to the booted
-        system with no *name*, the way `nixos-rebuild` does.
+        """Switch to `vivarium.configurations.<name>`, to a system's store
+        path, or back to the booted system with no *name*, the way
+        `nixos-rebuild` does. A store path the host built after boot needs
+        `add_closure` first.
 
         `switch` and `boot` point the system profile at it first. Then its
         `switch-to-configuration` runs in a transient unit, as nixos-rebuild
@@ -735,6 +738,8 @@ class Machine:
             if self.spec.toplevel is None:
                 raise MachineError(f"[{self.name}] the spec names no booted system")
             system = self.spec.toplevel
+        elif name.startswith("/nix/store/"):
+            system = name
         elif name in self.spec.configurations:
             system = self.spec.configurations[name]
         else:
@@ -764,6 +769,48 @@ class Machine:
                 f" (exit {rc}):\n{out}"
             )
         return rc, out
+
+    async def add_closure(self, info: str) -> list[str]:
+        """Make a closure the host built after boot valid in the guest.
+
+        *info* is a `closureInfo` output, such as a node's
+        `system.build.vivariumNixRegistration`. Its paths go into the
+        guest's store view and its registration into the guest's Nix
+        database. Returns the paths that were new to the view.
+        """
+        paths = [*storeview.read_paths(Path(info) / "store-paths"), info]
+        is_container = self.spec.backend == "container"
+        added: list[str] = []
+        if self.spec.store_paths is not None and self._rundir is not None:
+            added = storeview.add(self._rundir / "nix", paths, writable=is_container)
+            mounts = [path for path in added if not os.path.islink(path)]
+            if is_container and mounts:
+                await self._attach(self._rundir, mounts)
+        # A VM's overlay keeps a negative dentry for a name looked up before
+        # it existed. A container has no overlay here, and may not drop caches.
+        drop = "" if is_container else "echo 2 > /proc/sys/vm/drop_caches && "
+        rc, out = await self.execute(
+            f"{drop}nix-store --load-db < {shlex.quote(info)}/registration",
+            label=f"add_closure {Path(info).name}",
+        )
+        if rc != 0:
+            raise MachineError(f"[{self.name}] loading {info} failed (exit {rc}):\n{out}")
+        return added
+
+    async def _attach(self, rundir: Path, paths: list[str]) -> None:
+        """Mount *paths* inside a container guest; see `container.attach`."""
+        pid = (rundir / "crun" / container.INIT_PID).read_text().strip()
+        proc = await subprocess.create_subprocess_exec(
+            sys.executable, "-m", "vivarium_runner.crun_launch", "attach", "--pid", pid, *paths,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            # As the launcher gets it: the runner's interpreter alone does
+            # not find this package.
+            env=dict(os.environ, PYTHONPATH=os.pathsep.join(filter(None, sys.path))),
+        )
+        out, _ = await proc.communicate()
+        if proc.returncode != 0:
+            raise MachineError(f"[{self.name}] attaching store paths failed:\n{out.decode(errors='replace')}")
 
     # ── systemd ────────────────────────────────────────────────────
 

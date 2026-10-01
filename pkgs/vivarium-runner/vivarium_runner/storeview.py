@@ -28,6 +28,7 @@ _MS_BIND = 4096
 _MNT_DETACH = 2
 _AT_FDCWD = -100
 _AT_RECURSIVE = 0x8000
+_AT_EMPTY_PATH = 0x1000
 _MOUNT_ATTR_RDONLY = 0x1
 _SYS_MOUNT_SETATTR = 442
 """The same number on every architecture: it is newer than the split."""
@@ -61,8 +62,12 @@ def _mount(source: str, target: Path, fstype: str | None, flags: int) -> None:
     )
 
 
-def _read_only(path: Path, *, recursive: bool) -> None:
-    attr = _MountAttr(attr_set=_MOUNT_ATTR_RDONLY)
+def _set_read_only(path: Path, read_only: bool, *, recursive: bool) -> None:
+    attr = (
+        _MountAttr(attr_set=_MOUNT_ATTR_RDONLY)
+        if read_only
+        else _MountAttr(attr_clr=_MOUNT_ATTR_RDONLY)
+    )
     _check(
         _libc.syscall(
             _SYS_MOUNT_SETATTR,
@@ -72,8 +77,45 @@ def _read_only(path: Path, *, recursive: bool) -> None:
             ctypes.byref(attr),
             ctypes.sizeof(attr),
         ),
-        f"mount_setattr read-only on {path}",
+        f"mount_setattr {'read-only' if read_only else 'read-write'} on {path}",
     )
+
+
+def _read_only(path: Path, *, recursive: bool) -> None:
+    _set_read_only(path, True, recursive=recursive)
+
+
+def read_only_tree(fd: int, what: str) -> None:
+    """Make the detached mount *fd*, from `open_tree`, read-only."""
+    attr = _MountAttr(attr_set=_MOUNT_ATTR_RDONLY)
+    _check(
+        _libc.syscall(_SYS_MOUNT_SETATTR, fd, b"", _AT_EMPTY_PATH, ctypes.byref(attr), ctypes.sizeof(attr)),
+        f"mount_setattr read-only on {what}",
+    )
+
+
+def _mount_point(store: Path, path: str) -> bool:
+    """Where *path* goes in the view; False for a symlink, made whole."""
+    source = Path(path)
+    target = store / source.name
+    if source.is_symlink():
+        target.symlink_to(os.readlink(source))
+        return False
+    if source.is_dir():
+        target.mkdir()
+    else:
+        target.touch()
+    return True
+
+
+def _bind_path(store: Path, path: str, *, read_only: bool) -> None:
+    """One store path into the view, as a bind or a symlink."""
+    if not _mount_point(store, path):
+        return
+    target = store / Path(path).name
+    _mount(path, target, None, _MS_BIND)
+    if read_only:
+        _read_only(target, recursive=False)
 
 
 def read_paths(store_paths: Path) -> list[str]:
@@ -100,21 +142,40 @@ def build(root: Path, paths: Iterable[str], *, writable: bool = False) -> Path:
     else:
         _mount("tmpfs", store, "tmpfs", 0)
     for path in paths:
-        source = Path(path)
-        target = store / source.name
-        if source.is_symlink():
-            target.symlink_to(os.readlink(source))
-            continue
-        if source.is_dir():
-            target.mkdir()
-        else:
-            target.touch()
-        _mount(path, target, None, _MS_BIND)
-        if writable:
-            _read_only(target, recursive=False)
+        _bind_path(store, path, read_only=writable)
     if not writable:
         _read_only(store, recursive=True)
     return root
+
+
+def add(root: Path, paths: Iterable[str], *, writable: bool = False) -> list[str]:
+    """Put *paths* the view lacks into a running guest's view; return them.
+
+    A guest that looked a name up before it existed keeps a negative
+    dentry for it in its overlay, and then misses the new path until its
+    dentry cache is dropped (measured under UML).
+
+    Writable, for a container, only the mount points are made here: a
+    bind in this namespace never reaches the guest's. crun clones each
+    bind with `open_tree` and makes it private where the guest shares the
+    runner's user namespace, so no propagation setting helps (measured).
+    `container.attach` mounts them from inside.
+    """
+    store = root / "store"
+    missing = [path for path in paths if not os.path.lexists(store / Path(path).name)]
+    if not missing:
+        return []
+    if writable:
+        for path in missing:
+            _mount_point(store, path)
+        return missing
+    _set_read_only(store, False, recursive=False)
+    try:
+        for path in missing:
+            _bind_path(store, path, read_only=True)
+    finally:
+        _read_only(store, recursive=False)
+    return missing
 
 
 def remove(root: Path) -> None:

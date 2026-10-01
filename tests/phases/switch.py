@@ -34,7 +34,8 @@ async def test(vms: Machines) -> None:
     assert await one.unit_state("only-in-two.service") == "active"
     await one.fail("test -e /nix/var/nix/profiles/system")
 
-    await one.switch_to("two")
+    # By store path, as `vivarium-eval switch` names a system built after boot.
+    await one.switch_to(two)
     profile = await one.succeed("readlink -f /nix/var/nix/profiles/system")
     assert profile.strip() == two, profile
     assert (await one.succeed("cat /etc/vivarium-config")).strip() == "two"
