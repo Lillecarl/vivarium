@@ -289,6 +289,33 @@ in
       '';
     };
 
+    display = {
+      enable = lib.mkOption {
+        type = lib.types.bool;
+        default = false;
+        description = ''
+          Give the guest a screen, a keyboard and a pointer. QEMU backend
+          only.
+
+          The host reads the screen with QMP's `screendump` and types and
+          points with QMP's input commands, so `Machine.screenshot`,
+          `wait_for_text`, `send_chars` and `click` work whatever runs in
+          the guest. A getty runs on tty1, so a guest with no compositor
+          shows a login prompt.
+        '';
+      };
+      width = lib.mkOption {
+        type = lib.types.ints.positive;
+        default = 1024;
+        description = "Width of the screen in pixels.";
+      };
+      height = lib.mkOption {
+        type = lib.types.ints.positive;
+        default = 768;
+        description = "Height of the screen in pixels.";
+      };
+    };
+
     diskSize = lib.mkOption {
       type = lib.types.ints.positive;
       default = 512;
@@ -629,6 +656,13 @@ in
         message = ''
           vivarium.nestedVirtualization needs `backend = "qemu"`: a UML guest
           has no virtual CPU to expose vmx or svm on.
+        '';
+      }
+      {
+        assertion = config.vivarium.display.enable -> config.vivarium.backend == "qemu";
+        message = ''
+          vivarium.display needs `backend = "qemu"`: the screen and the input
+          devices are QEMU's, and a ${config.vivarium.backend} guest has neither.
         '';
       }
     ];

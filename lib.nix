@@ -184,6 +184,11 @@ rec {
       qemuImg = "${pkgs.qemu_kvm}/bin/qemu-img";
       virtiofsd = "${pkgs.virtiofsd}/bin/virtiofsd";
     }
+    # nixos-test's OCR packages, for the same reading of the same screens.
+    // lib.optionalAttrs (lib.any (machine: machine.vivarium.display.enable) machines) {
+      tesseract = "${pkgs.tesseract4}/bin/tesseract";
+      magick = "${pkgs.imagemagick_light}/bin/magick";
+    }
     // lib.optionalAttrs (on "container" != [ ]) {
       crun = lib.getExe pkgs.crun;
       setpriv = "${lib.getBin pkgs.util-linux}/bin/setpriv";

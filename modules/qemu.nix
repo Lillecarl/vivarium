@@ -67,7 +67,13 @@ lib.mkIf (cfg.backend == "qemu") {
   # lives in.  Named rather than left to udev's PCI autoload, so that a
   # guest reports from the moment it has a root rather than from whenever
   # the modalias rule happens to fire.
-  boot.kernelModules = [ "virtio_balloon" ];
+  boot.kernelModules = [
+    "virtio_balloon"
+  ]
+  ++ lib.optionals cfg.display.enable [
+    "virtio_gpu"
+    "virtio_input"
+  ];
 
   /*
     A real disk, the same one UML gets, for the same reason.
@@ -200,5 +206,10 @@ lib.mkIf (cfg.backend == "qemu") {
     toplevel = "${config.system.build.toplevel}";
     cmdline = lib.concatStringsSep " " config.boot.kernelParams;
     nested = cfg.nestedVirtualization;
+    display = if cfg.display.enable then { inherit (cfg.display) width height; } else null;
   };
+
+  # guest.nix turns the template off, which also takes logind's autovt@.
+  # A screen with nothing on it is a screen nothing can be read from.
+  systemd.services."getty@".enable = lib.mkIf cfg.display.enable (lib.mkForce true);
 }

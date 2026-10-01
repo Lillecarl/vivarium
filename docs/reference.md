@@ -379,6 +379,31 @@ variants are deliberately **not** checks, until we know whether our CI
 runners have `/dev/kvm`: a builder without it does not fail such a test,
 it refuses to build it — which would stop CI rather than report anything.
 
+### A guest's screen
+
+`vivarium.display.enable` gives a QEMU guest a `virtio-gpu` screen, an
+absolute pointer (`virtio-tablet`) and a getty on tty1. Every method
+goes through QEMU's monitor, so it works whatever the guest runs:
+
+| method | through |
+| --- | --- |
+| `screenshot`, and the OCR in `read_screen`, `screen_text`, `find_text`, `wait_for_text`, `click_text` | `screendump`, then nixos-test's tesseract and magick preprocessing |
+| `send_key`, `send_chars` | the human monitor's `sendkey`, on q35's PS/2 keyboard |
+| `move`, `click`, `press`, `release`, `drag`, `scroll` | `input-send-event` |
+
+Two facts, measured:
+
+- q35 has a VMware mouse, and the guest's driver makes it QEMU's
+  current absolute pointer. Every `abs` event then went to it, and the
+  tablet saw none. The runner adds `vmport=off` when a guest has a
+  display.
+- OCR reads PPM, not PNG: nixos-test's `imagemagick_light` has no PNG
+  codec. `screenshot` writes PNG.
+
+`nix build --file . screen` proves each claim with a negative control,
+by hand (it needs `/dev/kvm`). Under UML and containers, `vivarium.display`
+fails the evaluation, and a method fails naming the option.
+
 ### What the segment carries, per backend
 
 `.#iperf` and `.#iperf.qemu` are the same two guests on the same segment,

@@ -877,6 +877,27 @@ let
     };
 
     /*
+      Can a test read a guest's screen, type on it and point at it?
+
+      By hand, not in CI: it needs /dev/kvm. `desk` has a screen with a
+      getty on tty1; `blind` is a UML guest in the same run, the negative
+      control for a guest with no screen.
+    */
+    screen = mkTest {
+      name = "screen";
+      nodes.desk = {
+        vivarium.backend = "qemu";
+        vivarium.display.enable = true;
+        services.getty.autologinUser = "root";
+      };
+      nodes.blind = { };
+      phases.screen = {
+        script = ./tests/phases/screen.py;
+        after = [ "boot" ];
+      };
+    };
+
+    /*
       Do phases on disjoint guests run at once, and is everything they
       say still filed under the right phase?
 

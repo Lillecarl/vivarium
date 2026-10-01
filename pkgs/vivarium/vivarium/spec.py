@@ -135,6 +135,8 @@ class Spec(Strict):
     virtiofsd: Path | None = None
     crun: Path | None = None
     setpriv: Path | None = None
+    tesseract: Path | None = None
+    magick: Path | None = None
     unshare: Path | None = None
     """util-linux's, which puts `vivarium run` in its own namespace. See
     `vivarium/namespace.py`."""
@@ -174,6 +176,8 @@ class Spec(Strict):
             "virtiofsd",
             "crun",
             "setpriv",
+            "tesseract",
+            "magick",
         )
         return {
             key: str(value)

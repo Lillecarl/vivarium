@@ -36,8 +36,10 @@ from .agent import AGENT_READY
 from .arpyc import AsyncConnection, connect
 from . import backend as backends
 from . import container
+from . import display
 from . import forward
 from . import mconsole
+from . import ocr
 from . import qmp
 from . import report
 from . import storeview
@@ -75,6 +77,8 @@ class Toolchain:
     virtiofsd: Path | None = None
     crun: Path | None = None
     setpriv: Path | None = None
+    tesseract: Path | None = None
+    magick: Path | None = None
 
     @classmethod
     def from_json(cls, data: dict) -> Toolchain:
@@ -91,6 +95,8 @@ class Toolchain:
             virtiofsd=maybe("virtiofsd"),
             crun=maybe("crun"),
             setpriv=maybe("setpriv"),
+            tesseract=maybe("tesseract"),
+            magick=maybe("magick"),
         )
 
 
@@ -1043,6 +1049,181 @@ class Machine:
                 await self._memory.balloon(delta)
             except (mconsole.MconsoleError, qmp.QmpError) as error:
                 raise MachineError(f"[{self.name}] {error}") from error
+
+    # ── screen ─────────────────────────────────────────────────────
+    #
+    # Through QEMU's monitor, so they work whatever the guest runs: a
+    # getty, X, a Wayland compositor, another operating system. Coordinates
+    # are screen pixels, (0, 0) top left, the same ones `find_text` boxes.
+
+    @property
+    def screen_size(self) -> tuple[int, int]:
+        """Width and height of this guest's screen, in pixels."""
+        _, size = self._screen()
+        return size
+
+    def _screen(self) -> tuple[qmp.Qmp, tuple[int, int]]:
+        size = self.spec.boot.get("display")
+        if not size or not isinstance(self._memory, qmp.Qmp):
+            raise MachineError(
+                f"[{self.name}] has no screen: set `vivarium.display.enable = true`, "
+                f'which needs `vivarium.backend = "qemu"` (this guest is {self.spec.backend})'
+            )
+        return self._memory, (size["width"], size["height"])
+
+    async def _qmp(self, call: Callable[[qmp.Qmp], Any]) -> Any:
+        monitor, _ = self._screen()
+        try:
+            return await call(monitor)
+        except qmp.QmpError as error:
+            raise MachineError(f"[{self.name}] {error}") from error
+
+    async def screenshot(self, name: str | None = None) -> Path:
+        """Save the screen as PNG and return where.
+
+        Into this guest's artifacts, under ``screenshots/``, so it is kept
+        with the run's evidence. *name* without a suffix gets ``.png``;
+        none numbers them in order.
+        """
+        base = self.artifacts or self._rundir
+        if base is None:
+            raise MachineError(f"[{self.name}] is not running")
+        directory = base / "screenshots"
+        directory.mkdir(parents=True, exist_ok=True)
+        if name is None:
+            name = f"{len(list(directory.glob('*.png'))):03d}"
+        path = directory / (name if "." in name else f"{name}.png")
+        await self._qmp(lambda monitor: monitor.screendump(path))
+        return path
+
+    async def read_screen(self) -> list[ocr.Screen]:
+        """The screen through OCR: one reading per variant, each word boxed.
+
+        The raw screenshot first, then nixos-test's two preprocessed ones.
+        Most callers want :meth:`screen_text`, :meth:`find_text` or
+        :meth:`wait_for_text` instead.
+        """
+        if self.tools.tesseract is None or self._rundir is None:
+            raise MachineError(f"[{self.name}] has no OCR: the run has no guest with a display")
+        with tempfile.TemporaryDirectory(dir=self._rundir) as scratch:
+            ppm = Path(scratch) / "screen.ppm"
+            await self._qmp(lambda monitor: monitor.screendump(ppm, png=False))
+            try:
+                return await ocr.read(ppm, self.tools.tesseract, self.tools.magick)
+            except ocr.OcrError as error:
+                raise MachineError(f"[{self.name}] {error}") from error
+
+    async def screen_text(self) -> str:
+        """What the screen says, as OCR reads the screenshot unprocessed."""
+        return (await self.read_screen())[0].text
+
+    async def find_text(self, pattern: str | re.Pattern[str]) -> list[ocr.Text]:
+        """Where *pattern* is on the screen now, in the first reading that
+        has it. Empty if no reading does."""
+        for screen in await self.read_screen():
+            if found := screen.find(pattern):
+                return found
+        return []
+
+    async def wait_for_text(self, pattern: str | re.Pattern[str], timeout: float = 60) -> ocr.Text:
+        """Wait until *pattern* is on the screen; return where it is.
+
+        On timeout the error carries every reading of the last screen and
+        a screenshot of it, because OCR misreads and the reason is usually
+        visible in what it read instead.
+        """
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + timeout
+        with self.recorder.waiting(self.name, f"text {pattern!s}"):
+            while True:
+                screens = await self.read_screen()
+                for screen in screens:
+                    if found := screen.find(pattern):
+                        return found[0]
+                if loop.time() > deadline:
+                    shot = await self.screenshot()
+                    read = "\n---\n".join(screen.text for screen in screens)
+                    raise MachineError(
+                        f"[{self.name}] timed out waiting for {pattern!s} on the screen "
+                        f"({shot}); OCR read:\n{read}"
+                    )
+                await asyncio.sleep(0.5)
+
+    async def send_key(self, *keys: str, delay: float = 0.01) -> None:
+        """Press and release each of *keys* in turn.
+
+        QEMU's ``sendkey`` names, ``-`` joining a chord: ``"ret"``,
+        ``"ctrl-alt-f2"``, ``"shift-tab"``, ``"meta_l-d"``.
+        """
+        for key in keys:
+            await self._qmp(lambda monitor: monitor.sendkey(key))
+            await asyncio.sleep(delay)
+
+    async def send_chars(self, text: str, delay: float = 0.01) -> None:
+        r"""Type *text* on a US layout; ``"\n"`` is Enter."""
+        await self.send_key(*(display.key_for(char) for char in text), delay=delay)
+
+    async def move(self, x: int, y: int) -> None:
+        """Put the pointer on pixel (*x*, *y*)."""
+        _, (width, height) = self._screen()
+        events = display.move_events(x, y, width, height)
+        await self._qmp(lambda monitor: monitor.input(events))
+
+    async def press(self, button: display.Button | str = display.Button.LEFT) -> None:
+        """Hold a pointer button down, where the pointer is."""
+        events = display.button_events(display.Button(button), True)
+        await self._qmp(lambda monitor: monitor.input(events))
+
+    async def release(self, button: display.Button | str = display.Button.LEFT) -> None:
+        events = display.button_events(display.Button(button), False)
+        await self._qmp(lambda monitor: monitor.input(events))
+
+    async def click(
+        self, x: int, y: int, button: display.Button | str = display.Button.LEFT, count: int = 1
+    ) -> None:
+        """Click at (*x*, *y*); *count* 2 is a double click."""
+        await self.move(x, y)
+        for _ in range(count):
+            await self.press(button)
+            await self.release(button)
+            await asyncio.sleep(0.05)
+
+    async def drag(
+        self,
+        start: tuple[int, int],
+        end: tuple[int, int],
+        button: display.Button | str = display.Button.LEFT,
+        steps: int = 10,
+    ) -> None:
+        """Press at *start*, move to *end* in *steps*, release."""
+        await self.move(*start)
+        await self.press(button)
+        for step in range(1, steps + 1):
+            await self.move(
+                round(start[0] + (end[0] - start[0]) * step / steps),
+                round(start[1] + (end[1] - start[1]) * step / steps),
+            )
+            await asyncio.sleep(0.01)
+        await self.release(button)
+
+    async def scroll(self, x: int, y: int, clicks: int) -> None:
+        """Turn the wheel at (*x*, *y*): positive scrolls down."""
+        button = display.Button.WHEEL_DOWN if clicks > 0 else display.Button.WHEEL_UP
+        await self.move(x, y)
+        for _ in range(abs(clicks)):
+            await self.press(button)
+            await self.release(button)
+
+    async def click_text(
+        self,
+        pattern: str | re.Pattern[str],
+        timeout: float = 60,
+        button: display.Button | str = display.Button.LEFT,
+    ) -> ocr.Text:
+        """Wait for *pattern* on the screen and click its middle."""
+        found = await self.wait_for_text(pattern, timeout)
+        await self.click(*found.center, button=button)
+        return found
 
     def waiting(self, what: str):
         """Record a wait of the test's own as one step.

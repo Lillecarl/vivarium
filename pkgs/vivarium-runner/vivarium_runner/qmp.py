@@ -1,12 +1,12 @@
-"""A QEMU guest's balloon, over the monitor.
+"""A QEMU guest's balloon, screen and input devices, over the monitor.
 
 The protocol is QEMU's own ``qemu.qmp``, which the QEMU project ships and
 nixpkgs packages: it does the greeting, the capabilities handshake, the
 difference between an event and a reply, and the errors. What is here is
-only the part that is ours -- moving a balloon by a relative amount and
-waiting for the guest to get there.
+only the part that is ours. One client for everything: QEMU's ``-qmp``
+socket takes one connection at a time.
 
-See :meth:`Machine.shrink`.
+See :meth:`Machine.shrink` and :meth:`Machine.screenshot`.
 """
 
 from __future__ import annotations
@@ -41,18 +41,44 @@ class Qmp:
     def __init__(self, path: Path) -> None:
         self.path = path
         self._client: QMPClient | None = None
+        # Two first calls at once would open two connections, and the
+        # socket serves one at a time.
+        self._connecting = asyncio.Lock()
 
     async def _connected(self) -> QMPClient:
-        if self._client is None:
-            client = QMPClient("vivarium-runner")
-            await client.connect(str(self.path))
-            self._client = client
-        return self._client
+        async with self._connecting:
+            if self._client is None:
+                client = QMPClient("vivarium-runner")
+                await client.connect(str(self.path))
+                self._client = client
+            return self._client
 
     async def close(self) -> None:
         if self._client is not None:
             client, self._client = self._client, None
             await client.disconnect()
+
+    async def screendump(self, path: Path, png: bool = True) -> None:
+        """Write the screen to *path*, PNG or PPM. QEMU writes the file."""
+        client = await self._connected()
+        await client.execute("screendump", {"filename": str(path), "format": "png" if png else "ppm"})
+
+    async def sendkey(self, keys: str) -> None:
+        """Press and release *keys*, in the monitor's ``sendkey`` syntax.
+
+        Through the human monitor, not ``send-key``: it takes nixos-test's
+        spelling as is, ``ctrl-alt-delete`` and the ``0x0C`` scancodes in
+        its character table alike, and holds the keys 100 ms.
+        """
+        client = await self._connected()
+        reply = await client.execute("human-monitor-command", {"command-line": f"sendkey {keys}"})
+        if reply:
+            raise QmpError(f"sendkey {keys}: {reply}")
+
+    async def input(self, events: list[dict]) -> None:
+        """Send ``input-send-event`` events, as one batch."""
+        client = await self._connected()
+        await client.execute("input-send-event", {"events": events})
 
     @staticmethod
     async def _actual(client: QMPClient) -> int:

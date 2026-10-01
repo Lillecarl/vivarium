@@ -488,6 +488,21 @@ class Qemu:
             # rather than waiting for the guest to volunteer one.
             "-qmp", f"unix:{sockets}/qmp,server=on,wait=off",
         ]
+        if display := boot.get("display"):
+            argv += [
+                # `-display none` stays: screendump reads the device's
+                # surface, not a window.
+                "-device",
+                f"virtio-gpu-pci,xres={display['width']},yres={display['height']}",
+                # An absolute pointer, so a click lands where it is aimed
+                # without the guest's acceleration in between. The
+                # keyboard is q35's own PS/2, which `sendkey` drives.
+                "-device", "virtio-tablet-pci",
+            ]
+            # q35's VMware mouse is absolute too, and the guest's driver
+            # makes it current: measured, every `abs` event went to it and
+            # the tablet saw none.
+            argv[argv.index("-machine") + 1] += ",vmport=off"
         if art_fd is not None:
             argv += [
                 "-chardev", f"socket,id=artifacts,fd={art_fd}",
