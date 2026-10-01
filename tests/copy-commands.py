@@ -18,6 +18,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from typing import NoReturn
 
 WATCH = "wait for a pause or the verdict (exits 4 at a pause): "
 EXEC = "run Python against the guests: "
@@ -36,7 +37,7 @@ def main() -> None:
             stderr=subprocess.STDOUT,
         )
 
-    def fail(why: str) -> None:
+    def fail(why: str) -> NoReturn:
         runner.kill()
         sys.exit(f"{why}\n--- run.log\n{log.read_text()}")
 

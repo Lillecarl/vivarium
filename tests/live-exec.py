@@ -16,6 +16,7 @@ import sys
 import time
 from collections.abc import Callable
 from pathlib import Path
+from typing import NoReturn
 
 
 def until(check: Callable[[], bool], seconds: float, step: float = 0.1) -> bool:
@@ -45,7 +46,7 @@ def main() -> None:
             stderr=subprocess.STDOUT,
         )
 
-    def fail(why: str) -> None:
+    def fail(why: str) -> NoReturn:
         runner.kill()
         sys.exit(f"{why}\n--- run.log\n{log.read_text()}")
 
