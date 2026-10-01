@@ -232,6 +232,8 @@ in
   in {
     description = "Host control channel on ${cfg.agentDevice}";
     wantedBy = [ "multi-user.target" ];
+    # A switch (`vm.switch_to`) must not cut the channel that runs it.
+    restartIfChanged = false;
     after = units;
     bindsTo = units;
     environment.VIVARIUM_AGENT_DEVICE = cfg.agentDevice;
@@ -253,6 +255,8 @@ in
   systemd.services.vivarium-journal = lib.mkIf cfg.journal {
     description = "Stream the journal to the host";
     wantedBy = [ "multi-user.target" ];
+    # A restart truncates journal.jsonl.
+    restartIfChanged = false;
     before = [ "vivarium-agent.service" ];
     after = [ "systemd-journald.service" ];
     unitConfig.RequiresMountsFor = "/artifacts";

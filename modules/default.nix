@@ -11,6 +11,7 @@
   config,
   lib,
   pkgs,
+  extendModules,
   ...
 }:
 let
@@ -392,6 +393,25 @@ in
       };
     };
 
+    configurations = lib.mkOption {
+      type = lib.types.attrsOf lib.types.deferredModule;
+      default = { };
+      example = lib.literalExpression ''
+        { pynixd = { services.pynixd.enable = true; }; }
+      '';
+      description = ''
+        Configurations this guest can switch to while it runs, by name.
+
+        Each one is this guest plus the module, through `extendModules`, so
+        it keeps the hostname, the segment and the backend. Its system is in
+        the guest's Nix database, and a phase switches with
+        `await vm.switch_to("pynixd")`, or back with `vm.switch_to()`.
+
+        Evaluated here, on the host: the guest has no nixpkgs and no
+        network to build one with.
+      '';
+    };
+
     /*
       `mkTest` reads this off the first guest, the way it reads the kernel
       and the toolchain. The script belongs to the test and not to a node,
@@ -484,6 +504,10 @@ in
   };
 
   config = {
+    vivarium.nixDatabase.extraRoots = map toString (
+      lib.attrValues config.system.build.vivariumConfigurations
+    );
+
     assertions = [
       {
         assertion = config.vivarium.lan.address == null
@@ -519,6 +543,10 @@ in
     # kernel package, so the two always agree on module versions.
     system.build = {
       vivariumRunnerPackage = pkgs.callPackage ../pkgs/vivarium-runner { };
+
+      vivariumConfigurations = lib.mapAttrs (
+        _: module: (extendModules { modules = [ module ]; }).config.system.build.toplevel
+      ) config.vivarium.configurations;
 
       /*
         What the guest tells Nix about the store it can see -- see

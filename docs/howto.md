@@ -87,6 +87,30 @@ $ vivarium ctl --out ./out continue
 
 `continue` returns when the run is no longer paused.
 
+## Switch a guest to another configuration
+
+Declare each configuration on the node. Each one is the node plus a
+module:
+
+```nix
+nodes.one.vivarium.configurations.two = {
+  services.nginx.enable = true;
+};
+```
+
+A phase switches the running guest, as `nixos-rebuild` does:
+
+```python
+await vms.one.switch_to("two")            # switch: profile, then activate
+await vms.one.switch_to("two", "test")    # activate only
+await vms.one.switch_to()                 # back to the booted system
+rc, out = await vms.one.switch_to("two", check=False)  # exit 4: a unit failed
+```
+
+Host Nix evaluates each configuration. The guest has no nixpkgs. A
+reboot does not boot the new system: the guest always boots the system
+in its spec.
+
 ## Find out what went wrong
 
 ```console

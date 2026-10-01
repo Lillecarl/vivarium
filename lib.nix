@@ -142,6 +142,8 @@ rec {
       # and a per-run copy-on-write layer over it. Only what is inside
       # differs: UML boots `/init` from it, QEMU mounts it as `/`.
       image = "${machine.system.build.vivariumRootImage}";
+      toplevel = "${machine.system.build.toplevel}";
+      configurations = lib.mapAttrs (_: system: "${system}") machine.system.build.vivariumConfigurations;
     }
     // lib.optionalAttrs (machine.vivarium.backend == "qemu") {
       boot = machine.system.build.qemuBoot;

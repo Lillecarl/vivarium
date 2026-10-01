@@ -19,6 +19,7 @@ import collections
 import contextlib
 import os
 import re
+import shlex
 import shutil
 import signal
 import socket
@@ -28,7 +29,7 @@ import time
 from asyncio import subprocess
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Literal
 
 from .agent import AGENT_READY
 from .arpyc import AsyncConnection, connect
@@ -117,6 +118,11 @@ class MachineSpec:
     """What a QEMU guest boots: kernel, initrd, toplevel and cmdline, as
     ``modules/qemu.nix`` worked them out.  Empty under UML, which boots the
     root image instead."""
+    toplevel: str | None = None
+    """The system this guest boots."""
+    configurations: dict[str, str] = field(default_factory=dict)
+    """`vivarium.configurations`: each name and its system, which the
+    guest's Nix database already holds."""
     forward: tuple[forward.Rule, ...] = ()
     """Host-side port forwards.  Addresses in these are still None until
     :func:`vivarium_runner.forward.resolve` has run over every machine in the
@@ -140,6 +146,8 @@ class MachineSpec:
             store=data.get("store", "/nix"),
             store_paths=Path(data["storePaths"]) if data.get("storePaths") else None,
             boot=data.get("boot", {}),
+            toplevel=data.get("toplevel"),
+            configurations=data.get("configurations", {}),
             forward=tuple(
                 forward.Rule.from_json(rule) for rule in data.get("forward", [])
             ),
@@ -706,6 +714,56 @@ class Machine:
                 f"[{self.name}] command unexpectedly succeeded: {command}\n{out}"
             )
         return out
+
+    async def switch_to(
+        self,
+        name: str | None = None,
+        action: Literal["switch", "boot", "test", "dry-activate"] = "switch",
+        *,
+        check: bool = True,
+        timeout: float = 300,
+    ) -> tuple[int, str]:
+        """Switch to `vivarium.configurations.<name>`, or back to the booted
+        system with no *name*, the way `nixos-rebuild` does.
+
+        `switch` and `boot` point the system profile at it first. Then its
+        `switch-to-configuration` runs in a transient unit, as nixos-rebuild
+        runs it: the switch may restart the unit that started it, and here
+        that is the agent. Exit 4 means a unit failed; *check* raises on any
+        nonzero exit."""
+        if name is None:
+            if self.spec.toplevel is None:
+                raise MachineError(f"[{self.name}] the spec names no booted system")
+            system = self.spec.toplevel
+        elif name in self.spec.configurations:
+            system = self.spec.configurations[name]
+        else:
+            known = ", ".join(sorted(self.spec.configurations)) or "none"
+            raise MachineError(
+                f"[{self.name}] no configuration {name!r}; this guest has: {known}"
+            )
+        steps = []
+        if action in ("switch", "boot"):
+            steps.append(
+                f"nix-env --profile /nix/var/nix/profiles/system --set {shlex.quote(system)}"
+            )
+        steps.append(
+            "systemd-run -E LOCALE_ARCHIVE -E NIXOS_INSTALL_BOOTLOADER --collect"
+            " --no-ask-password --pipe --quiet --service-type=exec"
+            " --unit=nixos-rebuild-switch-to-configuration --wait"
+            f" {shlex.quote(system)}/bin/switch-to-configuration {action}"
+        )
+        rc, out = await self.execute(
+            " && ".join(steps),
+            timeout=timeout,
+            label=f"switch_to {name or 'booted'} {action}",
+        )
+        if check and rc != 0:
+            raise MachineError(
+                f"[{self.name}] switch to {name or 'the booted system'} failed"
+                f" (exit {rc}):\n{out}"
+            )
+        return rc, out
 
     # ── systemd ────────────────────────────────────────────────────
 
