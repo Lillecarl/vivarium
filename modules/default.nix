@@ -524,9 +524,10 @@ in
       default = { };
       example = lib.literalExpression ''
         {
-          spine1 = { segment = "leaf1-spine1"; };
-          spine2 = { segment = "leaf1-spine2"; };
-          hosts = { segment = "leaf1"; addresses = [ "10.1.0.1/24" ]; };
+          # "uplink" is the interface name in the guest; "leaf1-spine1" is
+          # the cable it is plugged into, shared with the peer's end.
+          uplink = { segment = "leaf1-spine1"; };
+          servers = { segment = "rack1"; addresses = [ "10.1.0.1/24" ]; };
         }
       '';
       description = ''

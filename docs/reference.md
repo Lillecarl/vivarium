@@ -222,18 +222,22 @@ an empty store.
 Three or more get a hub in the host process that floods frames between
 ports.
 
-A guest joins as many segments as it has `vivarium.interfaces`, and each
-attribute name is the interface's name in the guest:
+A guest joins as many segments as it has `vivarium.interfaces`. The
+attribute name is the interface's name in the guest. `segment` names the
+cable it is plugged into: every interface naming the same segment, in
+any guest, is on one link.
 
 ```nix
 nodes.leaf1.vivarium.interfaces = {
-  spine1.segment = "leaf1-spine1";                  # IPv6 link-local only
-  spine2.segment = "leaf1-spine2";
-  hosts = { segment = "leaf1"; addresses = [ "10.1.0.1/24" "fd01::1/64" ]; };
+  uplink.segment = "leaf1-spine1";                 # IPv6 link-local only
+  servers = { segment = "rack1"; addresses = [ "10.1.0.1/24" "fd01::1/64" ]; };
+};
+nodes.spine1.vivarium.interfaces = {
+  leaf1.segment = "leaf1-spine1";                  # the other end of uplink
 };
 ```
 
-So a router's configuration says `spine1` and means that link, on every
+So a router's configuration says `uplink` and means that link, on every
 backend. The runner gives NIC n of guest i the MAC `52:54:00:12:n:i`, and
 the guest renames the interface by it: UML first calls it `vecN`, QEMU
 names it after its PCI slot, and a container's tap gets the name directly.
