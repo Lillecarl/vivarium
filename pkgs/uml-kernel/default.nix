@@ -290,6 +290,15 @@ let
     IP_ADVANCED_ROUTER = yes;
     IP_MULTIPLE_TABLES = yes;
 
+    # A routed fabric: ECMP across spines, a VRF per tenant, VXLAN for
+    # EVPN. examples/frr-clos uses all three.
+    # NET_VRF needs both of the two after it, or the config drops it.
+    IP_ROUTE_MULTIPATH = yes;
+    NET_VRF = yes;
+    NET_L3_MASTER_DEV = yes;
+    IPV6_MULTIPLE_TABLES = yes;
+    VXLAN = yes;
+
     # kubelet reads cgroup pressure, and containerd's cgroup v2 driver
     # wants the io controller as well as the ones NixOS already needs.
     BLK_DEV_THROTTLING = yes;
