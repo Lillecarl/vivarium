@@ -115,7 +115,10 @@ the kernel's status.
 
 `.mcp.json` registers `vivarium-mcp` as `vivarium`. Its tools are `start`,
 `state`, `exec`, `inject`, `run_pytest`, `run_phase`, `resume`, `switch`,
-`stop`, `events` and `runs`. `switch` runs `vivarium-eval switch` with the
+`screenshot`, `stop`, `events` and `runs`. `screenshot` returns image
+content (FastMCP `structured_output=False`, or it fails serialising the
+image); acting on the screen is `exec` with `Machine`'s screen methods
+(`vivarium.display`, QEMU only; `nix build --file . screen`). `switch` runs `vivarium-eval switch` with the
 run's attr, file and env: host eval of the session plus one module on one
 node, `Machine.add_closure`, `switch_to(<store path>)`. A container guest
 takes late paths through `crun_launch attach` (open_tree, setns, move_mount):

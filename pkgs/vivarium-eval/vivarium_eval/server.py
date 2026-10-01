@@ -38,7 +38,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final
 
 import anyio
-from mcp.server.fastmcp import FastMCP
+from mcp.server.fastmcp import FastMCP, Image
 from mcp.server.stdio import stdio_server
 from mcp.shared.message import SessionMessage
 from mcp.types import JSONRPCMessage, JSONRPCNotification
@@ -63,7 +63,10 @@ Python against the live guests (top-level await; `vms`, `session` and
 each guest by name are in scope, and names persist between calls), and
 `inject` runs a local file's `async def test(vms)`; both work while
 phases run, not only while paused. `switch` adds a module file to one
-guest and switches it, evaluated and built on the host. While paused, `run_pytest` runs local
+guest and switches it, evaluated and built on the host. `screenshot`
+shows a guest's screen (`vivarium.display.enable`); act on it through
+`exec` with `click`, `send_chars`, `send_key`, `click_text` and
+`wait_for_text`. While paused, `run_pytest` runs local
 pytest tests, `run_phase` runs a declared phase, and `resume`
 continues. `inject` and `run_pytest` read the file each time, so the loop
 for a failing test is: edit it, send it again, against the same guests.
@@ -498,6 +501,23 @@ def build(runs_holder: list[Runs]) -> FastMCP:
             env={**os.environ, **found.source.env},
         )
         return {"ok": done.returncode == 0, "output": done.stdout.decode(errors="replace")}
+
+    # Unstructured: FastMCP would otherwise try to serialise the image
+    # as JSON, and fails on it.
+    @server.tool(structured_output=False)
+    async def screenshot(run: str, machine: str, name: str | None = None) -> list[Any]:
+        """A guest's screen as an image, saved in its artifacts too. The
+        guest needs `vivarium.display.enable`. To act on what you see, use
+        `exec`: `await m.click(x, y)`, `await m.send_chars("text\\n")`,
+        `await m.send_key("ctrl-alt-f2")`, `await m.click_text("OK")`,
+        `await m.wait_for_text("regex")`; pixels count from the top left."""
+        code = f"print(await vms[{machine!r}].screenshot({name!r}))"
+        reply = await request(runs().get(run).socket, Op.EXEC, code)
+        lines = (reply.output or "").strip().splitlines()
+        if not reply.ok or not lines:
+            return [json.dumps(_reply(reply))]
+        path = Path(lines[-1])
+        return [Image(data=path.read_bytes(), format="png"), str(path)]
 
     @server.tool()
     async def stop(run: str) -> dict[str, Any]:

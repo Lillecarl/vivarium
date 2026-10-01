@@ -1,3 +1,4 @@
+import base64
 import json
 import sys
 from pathlib import Path
@@ -6,8 +7,10 @@ from types import SimpleNamespace
 import anyio
 import pytest
 
+from vivarium.control import Reply
+from vivarium_eval import server as server_module
 from vivarium_eval.cli import explain
-from vivarium_eval.server import _monitor, channel_event, run_argv, select, why_it_exited
+from vivarium_eval.server import _monitor, build, channel_event, run_argv, select, why_it_exited
 
 
 class TestAnEvaluationError:
@@ -265,3 +268,31 @@ async def test_a_monitor_of_a_finished_run_gets_the_backlog_and_an_end(tmp_path:
                 lines = await _read_lines(client)
         group.cancel_scope.cancel()
     assert [event["event"] for event in lines] == ["exited"]
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("ok", [True, False])
+async def test_a_screenshot_comes_back_as_an_image(tmp_path: Path, monkeypatch, ok: bool):
+    png = tmp_path / "000.png"
+    png.write_bytes(b"\x89PNG\r\n\x1a\nrest")
+    asked = []
+
+    async def request(socket, op, code):
+        asked.append(code)
+        if ok:
+            return Reply(ok=True, output=f"{png}\n")
+        return Reply(ok=False, error="MachineError: [blind] has no screen")
+
+    monkeypatch.setattr(server_module, "request", request)
+    runs = SimpleNamespace(get=lambda run: SimpleNamespace(socket=tmp_path / "control.sock"))
+    content = await build([runs]).call_tool("screenshot", {"run": "r", "machine": "desk"})
+    blocks = content[0] if isinstance(content, tuple) else content
+    assert asked == ["print(await vms['desk'].screenshot(None))"]
+    if ok:
+        assert [block.type for block in blocks] == ["image", "text"]
+        assert base64.b64decode(blocks[0].data) == png.read_bytes()
+        assert blocks[1].text == str(png)
+    else:
+        # The negative: no image, and the guest's reason as text.
+        assert [block.type for block in blocks] == ["text"]
+        assert "has no screen" in blocks[0].text

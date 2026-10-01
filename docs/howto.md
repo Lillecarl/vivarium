@@ -133,6 +133,36 @@ unit you remove from the file is stopped.
 The evaluation reads the working tree as it is now. An edit to the
 session's own files reaches the guest too.
 
+## Look at a guest's screen and use it
+
+Give the guest a screen. It must be a QEMU guest:
+
+```nix
+nodes.desk = {
+  vivarium.backend = "qemu";
+  vivarium.display.enable = true;   # 1024x768; set width and height to change it
+};
+```
+
+Then, in a phase or through `exec`:
+
+```python
+await desk.wait_for_text(r"login:")          # OCR; returns where the text is
+await desk.send_chars("root\n")              # types on a US layout
+await desk.send_key("ctrl-alt-f2")           # QEMU's sendkey names
+await desk.click_text(r"^OK$")               # waits for it, clicks its middle
+await desk.click(512, 384, button="right")   # pixels from the top left
+await desk.drag((10, 10), (300, 200))
+path = await desk.screenshot("after-login")  # a PNG in artifacts/desk/screenshots/
+```
+
+The MCP server's `screenshot(run, machine)` tool returns the image, so
+an agent sees the screen and then acts on it through `exec`.
+
+OCR misreads. Wait for lowercase words where you can: tesseract read
+`VIVARIUM` in the console font as `UIUARIUM`. When a wait times out, the
+error holds what OCR read and the path of a screenshot.
+
 ## Find out what went wrong
 
 ```console
