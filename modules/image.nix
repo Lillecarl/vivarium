@@ -56,10 +56,10 @@ let
     # kernel does not know the parameter, so it arrives here as an
     # environment variable.
     #
-    # Here, with busybox, rather than as a systemd mount unit: util-linux
-    # mounts through fsconfig(2), and hostfs takes no parameter naming the
-    # host directory, so the new API can only give the guest the host's
-    # whole root. Measured -- "hostfs: Unknown parameter '/some/dir'".
+    # busybox passes the directory bare. util-linux mounts through
+    # fsconfig(2), where that fails ("hostfs: Unknown parameter
+    # '/some/dir'") and the directory is the named parameter instead:
+    # `-o hostfs=/some/dir`. Measured both ways.
     if [ -n "$VIVARIUM_ARTIFACTS" ]; then
       echo "uml-init: mounting $VIVARIUM_ARTIFACTS on /artifacts ..."
       mkdir -p /artifacts
