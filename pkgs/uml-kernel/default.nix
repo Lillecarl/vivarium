@@ -299,6 +299,15 @@ let
     IPV6_MULTIPLE_TABLES = yes;
     VXLAN = yes;
 
+    # Other distributions' roots: openSUSE's cloud image is XFS, its
+    # others and SLE are btrfs.
+    XFS_FS = yes;
+    BTRFS_FS = yes;
+    # Their /boot/efi, which fstab mounts: boot waits for it otherwise.
+    VFAT_FS = yes;
+    NLS_CODEPAGE_437 = yes;
+    NLS_ISO8859_1 = yes;
+
     # kubelet reads cgroup pressure, and containerd's cgroup v2 driver
     # wants the io controller as well as the ones NixOS already needs.
     BLK_DEV_THROTTLING = yes;
