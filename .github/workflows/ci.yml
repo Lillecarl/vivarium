@@ -276,6 +276,43 @@ jobs:
         run: nix build --no-link --print-build-logs --keep-going --file . forward.qemu
         timeout-minutes: 35
     timeout-minutes: 45
+  test-frr-clos:
+    env:
+      UMBRELLA_REV: ${{ needs.umbrella-rev.outputs.rev }}
+    if: '!cancelled() && (needs.kernel.result == ''success'' || needs.kernel.result == ''skipped'') && (github.event_name != ''workflow_dispatch'' || inputs.jobs == '''' || contains(format('',{0},'', inputs.jobs), '',test-frr-clos,''))'
+    needs:
+      - kernel
+      - umbrella-rev
+    runs-on: ubuntu-24.04
+    steps:
+      - timeout-minutes: 10
+        uses: actions/checkout@main
+      - if: runner.os == 'Linux'
+        name: Make room on the runner
+        run: df -h /; sudo rm -rf /usr/lib/jvm /usr/share/dotnet /usr/share/swift /usr/local/.ghcup /usr/local/julia* /usr/local/lib/android /opt/az /usr/local/share/powershell /usr/local/share/chromium /opt/microsoft /opt/google /usr/lib/firefox; docker system prune --all --force; docker builder prune --all --force; df -h /
+        timeout-minutes: 10
+      - timeout-minutes: 15
+        uses: cachix/install-nix-action@master
+        with:
+          extra_nix_config: |
+            access-tokens = github.com=${{ github.token }}
+            cores = 4
+            experimental-features = nix-command flakes
+            max-jobs = 1
+      - timeout-minutes: 15
+        uses: cachix/cachix-action@master
+        with:
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+          name: lillecarl
+          pushFilter: (-vivarium-test-)
+          useDaemon: false
+      - name: Allow the unprivileged user namespaces Nix and passt need
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0; sudo sysctl -w kernel.unprivileged_userns_clone=1; unshare --user --map-root-user --mount --pid --fork --mount-proc true
+        timeout-minutes: 5
+      - name: 'Run frr-clos on uml: BGP unnumbered and EVPN on a CLOS of FRR switches'
+        run: nix build --no-link --print-build-logs --keep-going --file . frr-clos
+        timeout-minutes: 20
+    timeout-minutes: 30
   test-fuse:
     env:
       UMBRELLA_REV: ${{ needs.umbrella-rev.outputs.rev }}

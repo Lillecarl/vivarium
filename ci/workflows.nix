@@ -55,6 +55,13 @@ let
       # that patch in it.
       backend = "uml";
     };
+    frr-clos = {
+      # Seven UML guests, 40 seconds once built: the kernel's VXLAN, VRF
+      # and multipath options only matter here.
+      description = "BGP unnumbered and EVPN on a CLOS of FRR switches";
+      timeoutMinutes = 30;
+      backend = "uml";
+    };
     iperf = {
       description = "what a segment between two guests carries";
       timeoutMinutes = 45;

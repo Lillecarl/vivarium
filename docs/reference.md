@@ -252,6 +252,8 @@ Where to say what:
 - the run prints each guest's interfaces once, at boot.
 
 `nix build --file . segments` checks all three backends, by hand.
+`examples/frr-clos` builds a CLOS fabric of FRR switches on this: BGP
+unnumbered, EVPN L2 and symmetric L3 (`nix build --file . frr-clos`).
 
 What a segment carries is decided by frame size, not by anything on the
 host. AF_UNIX only lets about ten datagrams queue on a socket before the
