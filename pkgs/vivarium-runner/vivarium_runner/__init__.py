@@ -5,6 +5,7 @@ Linux, QEMU and crun), their networks and forwards, and the agent a test
 talks to. A phase script is a coroutine over :class:`Machines`.
 """
 
+from .artifacts import hand_back
 from .display import Button
 from .forward import ForwardError
 from .machine import Interface, Machine, MachineError, Machines, MachineSpec, Toolchain
@@ -18,4 +19,5 @@ __all__ = [
     "MachineSpec",
     "Machines",
     "Toolchain",
+    "hand_back",
 ]

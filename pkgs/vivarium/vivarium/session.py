@@ -41,7 +41,7 @@ from typing import TYPE_CHECKING, Any
 import anyio
 import pytest
 from anyio.from_thread import BlockingPortal
-from vivarium_runner import Machine, MachineError, Machines, MachineSpec, Toolchain
+from vivarium_runner import Machine, MachineError, Machines, MachineSpec, Toolchain, hand_back
 from vivarium_runner.net import build_lans
 from vivarium_runner.report import Report
 
@@ -817,6 +817,7 @@ class Session:
             lan.close()
         self._lans = []
         self._booted = False
+        hand_back(self.artifacts)
 
     # ── helpers ────────────────────────────────────────────────────
 

@@ -11,7 +11,9 @@ than root writes too: a test suite in a guest seldom runs as root, and
 the host side must accept a file from an id it may not map.
 """
 
-from vivarium_runner import Machines
+from __future__ import annotations
+
+from vivarium_runner import Machines, hand_back
 
 BLOB = 1 << 20
 """A megabyte: hostfs and virtiofs are different code paths for a write
@@ -58,4 +60,16 @@ async def test(vms: Machines) -> None:
 
     assert await vms.one.count_processes("no-such-program") == 0
     print("[test] and counts none of a program that is not there")
+
+    # A container guest's service users run as subordinate ids, so a file
+    # they write lands on the host owned by an id the caller can neither
+    # read nor remove. `Session.teardown` hands the tree back; the same
+    # call here, where the run has really made such a file, so the claim is
+    # checked against one and not only against what root wrote.
+    hand_back(vms.artifacts)
+    owners = {
+        path.stat().st_uid for name in vms for path in (vms.artifacts / name).iterdir()
+    }
+    assert owners == {0}, f"the artifacts are owned by {sorted(owners)}, not the caller"
+    print("[test] teardown's hand-back leaves every artifact the caller's")
 
