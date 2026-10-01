@@ -102,8 +102,8 @@ jobs:
       - name: Allow the unprivileged user namespaces Nix and passt need
         run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0; sudo sysctl -w kernel.unprivileged_userns_clone=1; unshare --user --map-root-user --mount --pid --fork --mount-proc true
         timeout-minutes: 5
-      - name: 'The session: phase rules, knobs, --only, recipes, stream, pytest, breakpoints, printed commands, parallel, peers, cleanup, interactive'
-        run: nix build --no-link --print-build-logs --keep-going --file . phase-rules knobs only-rules recipes stream pytest-phase breakpoint live-exec copy-commands guest-suites kernel-override parallel peers cleanup interactive
+      - name: 'The session: phase rules, knobs, --only, recipes, stream, pytest, breakpoints, printed commands, parallel, peers, switch, cleanup, interactive'
+        run: nix build --no-link --print-build-logs --keep-going --file . phase-rules knobs only-rules recipes stream pytest-phase breakpoint live-exec copy-commands guest-suites kernel-override parallel peers switch cleanup interactive
         timeout-minutes: 20
     timeout-minutes: 30
   test-artifacts:
