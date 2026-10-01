@@ -216,6 +216,13 @@ in
     };
   };
 
+  # The store reads as uid 65534 on a rootless run, on every backend, and
+  # ssh refuses an included config file owned by neither root nor the user
+  # running it. NixOS includes this one from systemd's store path, so every
+  # user's ssh failed. It only adds `unix/*`, `vsock/*`, `machine/*` and
+  # `.host`, which a guest does not reach through ssh.
+  programs.ssh.systemd-ssh-proxy.enable = false;
+
   # The host's end of this is a socketpair, not a terminal, so the agent
   # is reachable before networking exists and inside a build sandbox.
   # Its "ready" line on the console is what the runner waits for.
