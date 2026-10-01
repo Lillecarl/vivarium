@@ -48,6 +48,14 @@ let
     OVERLAY_FS = yes;
     HOSTFS = yes;
 
+    # composefs: an EROFS image under an overlay whose redirects are xattrs
+    # in the image, mounted from the image file without a loop device.
+    # EROFS sits under MISC_FILESYSTEMS, which allnoconfig leaves off.
+    MISC_FILESYSTEMS = yes;
+    EROFS_FS = yes;
+    EROFS_FS_XATTR = yes;
+    EROFS_FS_BACKED_BY_FILE = yes;
+
     NET = yes;
     INET = yes;
     UNIX = yes;
