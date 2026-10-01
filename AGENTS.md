@@ -114,8 +114,13 @@ the kernel's status.
 ## The MCP server
 
 `.mcp.json` registers `vivarium-mcp` as `vivarium`. Its tools are `start`,
-`state`, `exec`, `inject`, `run_pytest`, `run_phase`, `resume`, `stop`,
-`events` and `runs`. A run started by `start` is a child process with
+`state`, `exec`, `inject`, `run_pytest`, `run_phase`, `resume`, `switch`,
+`stop`, `events` and `runs`. `switch` runs `vivarium-eval switch` with the
+run's attr, file and env: host eval of the session plus one module on one
+node, `Machine.add_closure`, `switch_to(<store path>)`. A container guest
+takes late paths through `crun_launch attach` (open_tree, setns, move_mount):
+no propagation setting reaches it, since crun clones binds private when the
+guest shares the runner's user namespace. A run started by `start` is a child process with
 `--break-on-failure`, never the server itself: MCP's stdio is the
 server's stdout, and a session prints to stdout.
 

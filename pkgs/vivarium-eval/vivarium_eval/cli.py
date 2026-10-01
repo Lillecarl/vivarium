@@ -2,6 +2,7 @@
 
     vivarium-eval run pytest-phase --out ./out -- -k hostname
     vivarium-eval phases recipes --file ~/Code/myproject
+    vivarium-eval switch switch --out ./out --node one --module ./more.nix
 
 `nix run --file . <attr>.run` with the evaluation and the build moved
 inside it: nanopynix evaluates `--file`, selects the attribute, builds
@@ -26,10 +27,15 @@ import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING, Final, Literal
 
 import anyio
 import nanopynix
 from nanopynix.exceptions import NixError
+from vivarium import control
+
+if TYPE_CHECKING:
+    from nanopynix.rpc import EvalSession, ValueProxy
 
 
 @dataclass(frozen=True)
@@ -103,17 +109,101 @@ async def resolve(file: Path, attr: list[str], command: str) -> str:
         session.store() as store,
         session.eval(store) as evaluator,
     ):
-        target = await (await evaluator.file(str(entry(file).resolve()))).auto_call()
-        for name in attr:
-            target = target.attr(name)
-        # A check that asserts on a session carries it as `.session`, so
-        # the name of the check runs the session it checks.
-        if not await target.has_attr("spec") and await target.has_attr("session"):
-            target = target.attr("session")
+        target = await session_of(evaluator, file, attr)
         # `vivarium-eval run` runs the session's `.driver`; `phases` its `.phases`.
         built = Path(await target.attr({"run": "driver"}.get(command, command)).realise_string())
     [program] = sorted((built / "bin").iterdir())
     return str(program)
+
+
+async def session_of(evaluator: EvalSession, file: Path, attr: list[str]) -> ValueProxy:
+    target = await (await evaluator.file(str(entry(file).resolve()))).auto_call()
+    for name in attr:
+        target = target.attr(name)
+    # A check that asserts on a session carries it as `.session`, so
+    # the name of the check runs the session it checks.
+    if not await target.has_attr("spec") and await target.has_attr("session"):
+        target = target.attr("session")
+    return target
+
+
+# The session again with one more module on one node: its peers see the
+# change, as they would had the module been there from the start. An
+# unknown node is refused first: `nodes.<name>` would declare a new guest.
+EXTENDED: Final = """session: node: module:
+  let
+    names = builtins.attrNames session.nodes;
+    extended = session.extend { modules = [ { nodes.${node}.imports = [ (/. + module) ]; } ]; };
+    build = extended.nodes.${node}.system.build;
+  in
+  if !(builtins.elem node names) then
+    throw "no guest ${node} in this session; it has: ${builtins.concatStringsSep ", " names}"
+  else
+    { system = build.toplevel; registration = build.vivariumNixRegistration; }
+"""
+
+Action = Literal["switch", "boot", "test", "dry-activate"]
+
+
+async def build_extended(file: Path, attr: list[str], node: str, module: Path) -> tuple[str, str]:
+    """The node's system with *module* added, and its closure's registration."""
+    async with (
+        nanopynix.rpc.Session() as session,
+        session.store() as store,
+        session.eval(store) as evaluator,
+    ):
+        target = await session_of(evaluator, file, attr)
+        extended = await (await target.apply(EXTENDED)).call(node, str(module.resolve()))
+        system = await extended.attr("system").realise_string()
+        registration = await extended.attr("registration").realise_string()
+    return system, registration
+
+
+def switch_code(node: str, system: str, registration: str, action: Action) -> str:
+    """What the run executes: the closure into the guest, then the switch."""
+    return (
+        f"_guest = vms[{node!r}]\n"
+        f"await _guest.add_closure({registration!r})\n"
+        f"print((await _guest.switch_to({system!r}, {action!r}))[1], end='')\n"
+    )
+
+
+def parse_switch(argv: list[str]) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        prog="vivarium-eval switch",
+        description="Add a module to one guest of a running session, build it on the host and switch to it",
+    )
+    parser.add_argument("attr", help="the session the run was started from, such as `switch`")
+    parser.add_argument("--file", "-f", type=Path, default=Path("."))
+    parser.add_argument("--out", type=Path, required=True, help="the running session's --out")
+    parser.add_argument("--node", required=True, help="the guest to change")
+    parser.add_argument("--module", type=Path, required=True, help="a NixOS module file")
+    parser.add_argument("--action", choices=["switch", "boot", "test", "dry-activate"], default="switch")
+    return parser.parse_args(argv)
+
+
+def switch(argv: list[str]) -> int:
+    args = parse_switch(argv)
+    try:
+        attr = split_attr(args.attr)
+    except ValueError as error:
+        say(str(error))
+        return 2
+    started = time.monotonic()
+    say(f"evaluating {args.attr} with {args.module} on {args.node}")
+    try:
+        system, registration = anyio.run(build_extended, args.file, attr, args.node, args.module)
+    except NixError as error:
+        say(f"evaluation failed: {explain(str(error))}")
+        return 1
+    say(f"built {system} in {time.monotonic() - started:.1f}s")
+    code = switch_code(args.node, system, registration, args.action)
+    reply = anyio.run(control.request, args.out / control.SOCKET, control.Op.EXEC, code)
+    if reply.output:
+        print(reply.output, end="" if reply.output.endswith("\n") else "\n")
+    if reply.error:
+        print(reply.error.rstrip(), file=sys.stderr)
+    return 0 if reply.ok else 1
 
 
 ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
@@ -144,7 +234,10 @@ def say(text: str) -> None:
 
 
 def main(argv: list[str] | None = None) -> None:
-    request = parse(sys.argv[1:] if argv is None else argv)
+    argv = sys.argv[1:] if argv is None else argv
+    if argv[:1] == ["switch"]:
+        raise SystemExit(switch(argv[1:]))
+    request = parse(argv)
     started = time.monotonic()
     say(f"evaluating {'.'.join(request.attr)} from {entry(request.file)}")
     try:

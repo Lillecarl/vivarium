@@ -62,7 +62,8 @@ pauses on the first failing phase with the guests still up. `exec` runs
 Python against the live guests (top-level await; `vms`, `session` and
 each guest by name are in scope, and names persist between calls), and
 `inject` runs a local file's `async def test(vms)`; both work while
-phases run, not only while paused. While paused, `run_pytest` runs local
+phases run, not only while paused. `switch` adds a module file to one
+guest and switches it, evaluated and built on the host. While paused, `run_pytest` runs local
 pytest tests, `run_phase` runs a declared phase, and `resume`
 continues. `inject` and `run_pytest` read the file each time, so the loop
 for a failing test is: edit it, send it again, against the same guests.
@@ -169,11 +170,21 @@ def run_argv(
 # ── runs ────────────────────────────────────────────────────────────
 
 
+@dataclass(frozen=True)
+class Source:
+    """Where a run by attribute came from, to evaluate it again."""
+
+    attr: str
+    file: str
+    env: dict[str, str]
+
+
 @dataclass
 class Run:
     id: str
     out: Path
     process: Process
+    source: Source | None = None
     finished: bool = False
     tail: Tail = field(init=False)
     backlog: list[dict[str, str]] = field(default_factory=list)
@@ -209,7 +220,7 @@ class Runs:
         )
         await self.push_stream.send(SessionMessage(message=JSONRPCMessage(notification)))
 
-    async def start(self, argv: list[str], out: Path, env: dict[str, str]) -> Run:
+    async def start(self, argv: list[str], out: Path, env: dict[str, str], source: Source | None = None) -> Run:
         log = (out / "terminal.log").open("wb")
         process = await anyio.open_process(
             argv,
@@ -219,7 +230,7 @@ class Runs:
             env={**os.environ, **env},
         )
         log.close()
-        run = Run(id=out.name, out=out, process=process)
+        run = Run(id=out.name, out=out, process=process, source=source)
         self.runs[run.id] = run
         # Bound before `start` answers, so a monitor started on the reply
         # finds the socket.
@@ -392,7 +403,8 @@ def build(runs_holder: list[Runs]) -> FastMCP:
             runner=Path(written["vivarium"]) if written.get("vivarium") else None,
             kernel=os.path.abspath(kernel) if kernel else None,
         )
-        run = await runs().start(argv, out, env or {})
+        source = Source(attr=attr, file=os.path.abspath(file), env=env or {}) if attr is not None else None
+        run = await runs().start(argv, out, env or {}, source)
         every = [sys.executable, "-m", "vivarium.cli", "monitor", str(out)]
         return {
             "run": run.id,
@@ -452,6 +464,40 @@ def build(runs_holder: list[Runs]) -> FastMCP:
             while paused_now(found.backlog) and found.process.returncode is None:
                 await anyio.sleep(0.05)
         return reply
+
+    @server.tool()
+    async def switch(run: str, node: str, module: str, action: str = "switch") -> dict[str, Any]:
+        """Add a NixOS module file to one guest of a running session and
+        switch it: the host evaluates the session again with the module on
+        `node`, builds it, and the guest switches to the result. `action` is
+        switch-to-configuration's: switch, test, boot or dry-activate. Only
+        for a run started by `attr`; edit the file and call again to iterate."""
+        found = runs().get(run)
+        if found.source is None:
+            return {"ok": False, "error": "this run was started from a spec; switch needs one started by attr"}
+        argv = [
+            str(Path(sys.executable).parent / "vivarium-eval"),
+            "switch",
+            found.source.attr,
+            "--file",
+            found.source.file,
+            "--out",
+            str(found.out),
+            "--node",
+            node,
+            "--module",
+            os.path.abspath(module),
+            "--action",
+            action,
+        ]
+        done = await anyio.run_process(
+            argv,
+            check=False,
+            stdin=subprocess.DEVNULL,
+            stderr=subprocess.STDOUT,
+            env={**os.environ, **found.source.env},
+        )
+        return {"ok": done.returncode == 0, "output": done.stdout.decode(errors="replace")}
 
     @server.tool()
     async def stop(run: str) -> dict[str, Any]:

@@ -111,6 +111,28 @@ Host Nix evaluates each configuration. The guest has no nixpkgs. A
 reboot does not boot the new system: the guest always boots the system
 in its spec.
 
+## Change a running guest's configuration
+
+Write the change as a module file and apply it to a run you started by
+attribute:
+
+```console
+$ vivarium-eval run switch --out ./out --break switch &
+$ vivarium-eval switch switch --out ./out --node one --module ./more.nix
+$ vivarium-eval switch switch --out ./out --node one --module ./more.nix --action test
+```
+
+The MCP server's `switch` tool does the same: `switch(run, node, module)`.
+
+The host evaluates the session again with the module on the node, and
+builds the system. The guest gets the new closure in its store view and
+its Nix database, then switches. Edit the file and apply it again to
+iterate. Each apply is the booted configuration plus the file, so a
+unit you remove from the file is stopped.
+
+The evaluation reads the working tree as it is now. An edit to the
+session's own files reaches the guest too.
+
 ## Find out what went wrong
 
 ```console
