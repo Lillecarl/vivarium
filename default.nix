@@ -1838,12 +1838,12 @@ let
 
     # Do the UML guest primitives behave like vmTools.runInLinuxVM,
     # minus KVM? One guest per case, each asserting its own output on
-    # the host below. Slow (five boots), but the alternative is finding
+    # the host below. Slow (eight boots), but the alternative is finding
     # out from a red disk image.
     check-uml-vm-tools =
       let
         umlRun = umlVmTools.runInLinuxVM;
-        guests = {
+        guests = rec {
           trivial = umlRun (
             pkgs.runCommand "uml-check-trivial" { } ''echo ok > $out''
           );
@@ -1878,6 +1878,40 @@ let
                 '';
             } ''test -b /dev/ubda && echo ok > $out/ok''
           );
+          # An ext4 image with a marker file and a native `/bin`, built
+          # inside a guest: the backing file for the two cases below.
+          fsImage = umlRun (
+            pkgs.runCommand "uml-check-fs-image" {
+              buildInputs = [
+                pkgs.e2fsprogs
+                pkgs.util-linux
+              ];
+            } ''
+              truncate -s 64M image.raw
+              mkfs.ext4 -F -L umlcheck image.raw
+              mkdir -p mnt
+              mount -o loop image.raw mnt
+              echo marker-content > mnt/marker
+              echo nested > mnt/nested-file
+              mkdir -p mnt/bin
+              cp ${pkgs.pkgsStatic.busybox}/bin/busybox mnt/bin/busybox
+              ln -s busybox mnt/bin/sh
+              ln -s busybox mnt/bin/cat
+              umount mnt
+              cp image.raw $out
+            ''
+          );
+          # The image as guest root: the sentinel proves entry through
+          # `chroot` happened, and plain `cat` proves the native `/bin`
+          # is on PATH.
+          inImage = umlVmTools.runInLinuxImage (
+            pkgs.runCommand "uml-check-in-image" {
+              diskImage = guests.fsImage;
+              diskImageFormat = "raw";
+            } ''test -e /.uml-in-image && cat /marker > $out''
+          );
+          # The same image loop-mounted read-only, copied out.
+          extracted = umlVmTools.extractFs { file = guests.fsImage; };
         };
         withoutKvm = lib.all (
           guest: !(builtins.elem "kvm" (guest.drvAttrs.requiredSystemFeatures or [ ]))
@@ -1896,6 +1930,9 @@ let
         test -e ${guests.disk}/disk-image.qcow2
         test "$(cat ${guests.hooks}/order)" = "$(printf 'pre\npayload\npost')"
         test "$(cat ${guests.hooks}/ok)" = ok
+        test "$(cat ${guests.inImage})" = marker-content
+        test "$(cat ${guests.extracted}/marker)" = marker-content
+        test "$(cat ${guests.extracted}/nested-file)" = nested
         touch $out
       '';
 

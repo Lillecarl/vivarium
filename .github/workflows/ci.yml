@@ -717,7 +717,7 @@ jobs:
       - name: Allow the unprivileged user namespaces Nix and passt need
         run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0; sudo sysctl -w kernel.unprivileged_userns_clone=1; unshare --user --map-root-user --mount --pid --fork --mount-proc true
         timeout-minutes: 5
-      - name: 'Build derivations inside UML guests: trivial, structured, hooks, memory, disk'
+      - name: 'Build derivations inside UML guests: trivial, structured, hooks, memory, disk, fs-image, in-image, extract'
         run: nix build --no-link --print-build-logs --keep-going --file . check-uml-vm-tools
         timeout-minutes: 60
     timeout-minutes: 90
