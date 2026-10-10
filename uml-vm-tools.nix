@@ -181,10 +181,18 @@ let
       EOF
 
       ${coreutils}/bin/chmod +x ./run-uml
-      ./run-uml
+      # The guest console goes to a file, not the build log: piped
+      # straight through, the kernel's early messages never arrive in a
+      # sandbox (measured: only blank lines), while a file captures all
+      # of it, as the vivarium runner's per-guest console log does. The
+      # replay below keeps a failed boot reading like the QEMU path, and
+      # `-K` keeps the file itself.
+      kernel_rc=0
+      ./run-uml >console.log 2>&1 || kernel_rc=$?
+      ${coreutils}/bin/cat console.log
 
       if ! test -e xchg/in-vm-exit; then
-        echo "UML guest didn't produce an exit code."
+        echo "UML guest didn't produce an exit code (kernel exit $kernel_rc)."
         exit 1
       fi
 
