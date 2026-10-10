@@ -1867,15 +1867,10 @@ let
           );
           disk = umlRun (
             pkgs.runCommand "uml-check-disk" {
-              preVM =
-                umlVmTools.createEmptyImage {
-                  size = 64;
-                  fullName = "uml-check-disk";
-                }
-                + ''
-                  ${pkgs.qemu_kvm}/bin/qemu-img convert -O raw $diskImage $out/disk-image.raw
-                  diskImage=$out/disk-image.raw
-                '';
+              preVM = umlVmTools.createEmptyRawImage {
+                size = 64;
+                fullName = "uml-check-disk";
+              };
             } ''test -b /dev/ubda && echo ok > $out/ok''
           );
           # An ext4 image with a marker file and a native `/bin`, built
