@@ -12,7 +12,11 @@
 # `fillDiskWithDebs`, `buildRPM` and `createEmptyImage`, named in
 # `names` below so the overlay (`lib.nix`) cannot drift from this set.
 # Ours on top: `createEmptyRawImage`, the empty image plus the raw
-# conversion the fill ports share. Left out on purpose:
+# conversion the fill ports share, and the toolchain builders
+# (`makeStoreImage`, `makeRPMToolchainImage`, `makeDeb`,
+# `makeDebShim`): images and packages assembled from the store for
+# callers with no distro, e.g. `buildRPM` over a symlinked compiler.
+# Left out on purpose:
 # `makeImageTestScript` generates a QEMU command for interactive use,
 # and a kept `run-uml` already covers that need; the distro pipelines
 # (`makeImageFromRPMDist`, `makeImageFromDebDist`, `diskImages`) and
@@ -371,6 +375,125 @@ let
     createEmptyImage { inherit size fullName; } + convertToRawImage;
 
   /*
+    A raw ext4 image at `$out`, assembled host-side from store
+    symlinks: a static busybox for `/bin/sh`, every `bin/*` of each
+    package in `tools` linked into `/usr/bin`, and the loader, laid
+    with `mkfs.ext4 -d` (no mounting). Nix binaries carry their
+    RUNPATH, so the links run wherever the image boots. `setup` is a
+    shell fragment populating `root/` further, e.g. a package
+    database; `buildInputs` covers what it runs.
+  */
+  makeStoreImage =
+    {
+      name,
+      # Disk image size in MiB (1024*1024 bytes)
+      size ? 64,
+      # Packages whose bin/* lands in the image's /usr/bin
+      tools ? [ ],
+      # Extra shell populating root/, e.g. mkdir plus database init
+      setup ? "",
+      buildInputs ? [ ],
+    }:
+    pkgs.runCommand name
+      {
+        buildInputs = [ pkgs.e2fsprogs ] ++ buildInputs;
+      }
+      ''
+        mkdir -p root/{bin,usr/bin,lib64,etc,tmp}
+        ln -s ${pkgs.pkgsStatic.busybox}/bin/busybox root/bin/busybox
+        ln -s busybox root/bin/sh
+        for p in ${toString tools}; do
+          for b in $p/bin/*; do ln -s "$b" root/usr/bin/; done
+        done
+        ln -s ${pkgs.glibc}/lib/ld-linux-x86-64.so.2 root/lib64/ld-linux-x86-64.so.2
+        ${setup}
+        truncate -s ${toString size}M $out
+        ${pkgs.e2fsprogs}/bin/mkfs.ext4 -F -d root $out
+      '';
+
+  /*
+    A raw ext4 image carrying an RPM toolchain: `makeStoreImage` plus
+    the RPM tools and an empty database. `buildRPM` takes it as
+    `diskImage`; the caller brings the compiler through `tools`, since
+    only it knows what the package builds with.
+  */
+  makeRPMToolchainImage =
+    {
+      name,
+      # Disk image size in MiB (1024*1024 bytes)
+      size ? 64,
+      # Packages whose bin/* lands in the image's /usr/bin
+      tools ? [ ],
+      # Extra shell populating root/, after the database init
+      setup ? "",
+    }:
+    makeStoreImage {
+      inherit name size;
+      buildInputs = [ pkgs.rpm ];
+      tools = [ pkgs.rpm ] ++ tools;
+      setup = ''
+        mkdir -p root/var/lib/rpm
+        rpm --initdb --dbpath $PWD/root/var/lib/rpm
+        ${setup}
+      '';
+    };
+
+  /*
+    A `.deb` at `$out`, assembled host-side: `files` is a shell
+    fragment populating `pkg/` (the payload directory; `DEBIAN`
+    arrives pre-created), and the control file comes from the rest.
+  */
+  makeDeb =
+    {
+      name,
+      version ? "1.0",
+      architecture ? "amd64",
+      maintainer ? "uml-vm-tools",
+      description ? "${name} payload",
+      extraControl ? "",
+      files,
+    }:
+    pkgs.runCommand "${name}_${version}_${architecture}.deb" { buildInputs = [ pkgs.dpkg ]; } ''
+      mkdir -p pkg/DEBIAN
+      cat > pkg/DEBIAN/control <<EOF
+      Package: ${name}
+      Version: ${version}
+      Architecture: ${architecture}
+      Maintainer: ${maintainer}
+      Description: ${description}${lib.optionalString (extraControl != "") "\n${extraControl}"}
+      EOF
+      ${files}
+      dpkg-deb --build pkg $out
+    '';
+
+  /*
+    The `.deb` a bare image needs before `fillDiskWithDebs` can
+    install into it: store-backed `dpkg` (with the loader) for the
+    chrooted `--install`, the `start-stop-daemon` the install dance
+    moves aside, and the skeleton a distro's base files would lay
+    (the port's DB setup only touches these, never creates them).
+    Install it first in every component: it is never a distro, so it
+    stays check and bootstrap scaffolding rather than a payload.
+  */
+  makeDebShim =
+    {
+      name ? "uml-shim",
+      version ? "1.0",
+    }:
+    makeDeb {
+      inherit name version;
+      description = "store shims for bare images";
+      files = ''
+        mkdir -p pkg/usr/bin pkg/sbin pkg/lib64 pkg/etc pkg/var/lib/dpkg
+        ln -s ${pkgs.dpkg}/bin/dpkg pkg/usr/bin/dpkg
+        ln -s ${pkgs.glibc}/lib/ld-linux-x86-64.so.2 pkg/lib64/ld-linux-x86-64.so.2
+        echo '#!/bin/true' > pkg/sbin/start-stop-daemon
+        chmod 755 pkg/sbin/start-stop-daemon
+        touch pkg/etc/shells pkg/var/lib/dpkg/status pkg/var/lib/dpkg/available pkg/var/lib/dpkg/diversions
+      '';
+    };
+
+  /*
     A bash fragment that formats the attached image and mounts it at
     `/mnt`, for the disk-filling ports. nixpkgs'
     `defaultCreateRootFS` (`pkgs/build-support/vm/default.nix:365`)
@@ -395,12 +518,13 @@ let
 in
 rec {
   inherit umlKernel createEmptyImage createEmptyRawImage defaultCreateRootFS;
+  inherit makeStoreImage makeRPMToolchainImage makeDeb makeDebShim;
 
   # The nixpkgs-compatible surface: exactly the `vmTools` names this
   # set replaces. The overlay reads this list rather than naming them
-  # again, so the two cannot drift apart; `umlKernel` and
-  # `createEmptyRawImage` stay out, since nixpkgs' `vmTools` has
-  # neither.
+  # again, so the two cannot drift apart; `umlKernel` and the helpers
+  # above (`createEmptyRawImage`, the toolchain builders) stay out,
+  # since nixpkgs' `vmTools` has none of them.
   names = [
     "runInLinuxVM"
     "runInLinuxImage"
