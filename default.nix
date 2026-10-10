@@ -1838,11 +1838,32 @@ let
 
     # Do the UML guest primitives behave like vmTools.runInLinuxVM,
     # minus KVM? One guest per case, each asserting its own output on
-    # the host below. Slow (fourteen boots), but the alternative is
+    # the host below. Slow (nineteen boots), but the alternative is
     # finding out from a red disk image.
     check-uml-vm-tools =
       let
         umlRun = umlVmTools.runInLinuxVM;
+        # Bare images are no distro: the two fragments every RPM flow
+        # needs. The install prelude stages the store's rpm and cpio
+        # under /mnt (with the loader) for the chrooted install; the
+        # macros switch off what a bare image cannot do (buildroot
+        # policies, which want distro tools, and debuginfo, which
+        # wants find-debuginfo). ELF dependency generation is NOT
+        # among them: the fileattrs tables redefine its generators
+        # after the macros load (measured: `%__elf_* %{nil}` changes
+        # nothing), so each ELF recipe opts out in its own spec with
+        # `AutoReqProv: no` instead.
+        rpmBarePreInstall = ''
+          mkdir -p /mnt/usr/bin /mnt/lib64
+          ln -s ${pkgs.rpm}/bin/rpm /mnt/usr/bin/rpm
+          ln -s ${pkgs.cpio}/bin/cpio /mnt/usr/bin/cpio
+          ln -s ${pkgs.glibc}/lib/ld-linux-x86-64.so.2 /mnt/lib64/ld-linux-x86-64.so.2
+        '';
+        rpmBareMacros = ''
+          mkdir -p /etc/rpm
+          echo "%__os_install_post %{nil}" >> /etc/rpm/macros
+          echo "%debug_package %{nil}" >> /etc/rpm/macros
+        '';
         guests = rec {
           trivial = umlRun (
             pkgs.runCommand "uml-check-trivial" { } ''echo ok > $out''
@@ -1959,21 +1980,15 @@ let
               rpmbuild -bb --define "_topdir $PWD/rpmroot" rpmroot/SPECS/proof.spec
               cp rpmroot/RPMS/*/*.rpm $out/proof.rpm
             '';
-          # The RPM installed into an image. `preInstall` stages the
-          # store's rpm and cpio under /mnt (with the loader): the
-          # proof RPM is not a distro, so the image has no native ones,
-          # and the port itself stays byte-identical.
+          # The RPM installed into an image: the proof RPM is not a
+          # distro, so the image has no native rpm or cpio, and the
+          # port itself stays byte-identical.
           fillRpm = umlVmTools.fillDiskWithRPMs {
             size = 64;
             rpms = [ "${guests.rpmTestRpm}/proof.rpm" ];
             name = "uml-check-fill-rpm";
             fullName = "uml-check-fill-rpm";
-            preInstall = ''
-              mkdir -p /mnt/usr/bin /mnt/lib64
-              ln -s ${pkgs.rpm}/bin/rpm /mnt/usr/bin/rpm
-              ln -s ${pkgs.cpio}/bin/cpio /mnt/usr/bin/cpio
-              ln -s ${pkgs.glibc}/lib/ld-linux-x86-64.so.2 /mnt/lib64/ld-linux-x86-64.so.2
-            '';
+            preInstall = rpmBarePreInstall;
           };
           # The filled image loop-mounted read-only, copied out.
           extractedRpm = umlVmTools.extractFs { file = "${guests.fillRpm}/disk-image.raw"; };
@@ -2057,25 +2072,145 @@ let
               cp ${proofSpec} pkg/uml-built-1.0/uml-built.spec
               tar -czf $out -C pkg uml-built-1.0
             '';
-          # The tarball built to RPMs inside the toolchain image. The
-          # macros switch off what a bare image cannot do: buildroot
-          # policies (which want distro tools) and debuginfo (which
-          # wants find-debuginfo).
+          # The tarball built to RPMs inside the toolchain image.
           builtRpm = umlVmTools.buildRPM {
             diskImage = guests.rpmToolchain;
             diskImageFormat = "raw";
             name = "uml-check-built-rpm";
             src = guests.rpmSrc;
-            preBuild = ''
-              mkdir -p /etc/rpm
-              echo "%__os_install_post %{nil}" >> /etc/rpm/macros
-              echo "%debug_package %{nil}" >> /etc/rpm/macros
-            '';
+            preBuild = rpmBareMacros;
             postBuild = ":";
             preInstall = ":";
             postInstall = ":";
             extraRPMs = "";
           };
+          # A real recipe: GNU hello's own tarball (already in the
+          # store, so no network) repacked with an explicit spec. No
+          # redhat-rpm-config macros exist on a bare image, so the
+          # spec calls configure and make by hand; the toolchain
+          # carries the autotools runtime (sed, awk, binutils for
+          # ar, texinfo for install-info) on top of the proof's set.
+          helloSrc =
+            let
+              version = pkgs.hello.version;
+              helloSpec = pkgs.writeText "hello.spec" ''
+                Name: hello
+                Version: ${version}
+                Release: 1
+                Summary: The GNU hello program
+                License: GPL-3.0-or-later
+                Source0: hello-${version}.tar.gz
+                # No provider names a bare image's libraries, so no
+                # generated dependencies either (see `rpmBareMacros`).
+                AutoReqProv: no
+
+                %description
+                The GNU hello program prints a friendly greeting.
+
+                %prep
+                %setup -q
+
+                %build
+                ./configure --prefix=/usr
+                make
+
+                %install
+                make install DESTDIR=%{buildroot}
+
+                %files
+                /usr/bin/hello
+                /usr/share/info/hello.info*
+                /usr/share/locale/*/LC_MESSAGES/hello.mo
+                /usr/share/man/man1/hello.1
+              '';
+            in
+            pkgs.runCommand "hello-${version}.tar.gz" {
+              buildInputs = [
+                pkgs.gnutar
+                pkgs.gzip
+              ];
+            } ''
+              mkdir -p pkg
+              tar -xzf ${pkgs.hello.src} -C pkg
+              cp ${helloSpec} pkg/hello-${version}/hello.spec
+              tar -czf $out -C pkg hello-${version}
+            '';
+          helloToolchain = umlVmTools.makeRPMToolchainImage {
+            name = "uml-check-hello-toolchain";
+            tools = [
+              pkgs.coreutils
+              pkgs.findutils
+              pkgs.gnugrep
+              pkgs.gnutar
+              pkgs.gzip
+              pkgs.gnumake
+              pkgs.gcc
+              pkgs.binutils
+              pkgs.gnused
+              pkgs.gawk
+              pkgs.file
+              pkgs.texinfo
+            ];
+          };
+          # Hello configured, compiled and packaged inside the image,
+          # then installed into a second image and run: the binary
+          # carries its RUNPATH, so it executes on the host below.
+          builtHello = umlVmTools.buildRPM {
+            diskImage = guests.helloToolchain;
+            diskImageFormat = "raw";
+            name = "uml-check-built-hello";
+            src = guests.helloSrc;
+            preBuild = rpmBareMacros;
+            postBuild = ":";
+            preInstall = ":";
+            postInstall = ":";
+            extraRPMs = "";
+          };
+          fillHello = umlVmTools.fillDiskWithRPMs {
+            size = 64;
+            rpms = [ "${guests.builtHello}/rpms/uml-check-hello-toolchain/hello-${pkgs.hello.version}-1.x86_64.rpm" ];
+            name = "uml-check-fill-hello";
+            fullName = "uml-check-fill-hello";
+            preInstall = rpmBarePreInstall;
+          };
+          extractHello = umlVmTools.extractFs { file = "${guests.fillHello}/disk-image.raw"; };
+          # A real recipe: a Deb with maintainer scripts, which run
+          # under the image's /bin/sh -- the gap the extended shim
+          # closes. `preinst` may only touch what exists, so it makes
+          # its directory first, as real preinsts do.
+          debNotes = umlVmTools.makeDeb {
+            name = "uml-notes";
+            description = "proof payload with maintainer scripts";
+            files = ''
+              mkdir -p pkg/usr/share/uml-notes pkg/usr/share/doc/uml-notes
+              echo notes-payload > pkg/usr/share/uml-notes/payload
+              echo doc > pkg/usr/share/doc/uml-notes/README
+              cat > pkg/DEBIAN/preinst <<'SCRIPT'
+              #!/bin/sh
+              set -e
+              mkdir -p /usr/share/uml-notes
+              echo preinst-ran > /usr/share/uml-notes/pre-state
+              SCRIPT
+              cat > pkg/DEBIAN/postinst <<'SCRIPT'
+              #!/bin/sh
+              set -e
+              if grep -q '^configured$' /usr/share/uml-notes/state 2>/dev/null; then
+                echo already > /usr/share/uml-notes/post-state
+              else
+                echo configured > /usr/share/uml-notes/state
+              fi
+              SCRIPT
+              chmod 755 pkg/DEBIAN/preinst pkg/DEBIAN/postinst
+            '';
+          };
+          fillDebScripts = umlVmTools.fillDiskWithDebs {
+            size = 64;
+            debs = [[ "${guests.debShim}" "${guests.debNotes}" ]];
+            name = "uml-check-fill-deb-scripts";
+            fullName = "uml-check-fill-deb-scripts";
+            postInstall = ":";
+          };
+          extractDebScripts = umlVmTools.extractFs { file = "${guests.fillDebScripts}/disk-image.raw"; };
         };
         withoutKvm = lib.all (
           guest: !(builtins.elem "kvm" (guest.drvAttrs.requiredSystemFeatures or [ ]))
@@ -2104,6 +2239,13 @@ let
         test "$(cat ${guests.extractDeb}/usr/share/uml-proof/marker)" = deb-marker-content
         test "$(cat ${guests.fillDeb}/nix-support/full-name)" = uml-check-fill-deb
         test -e ${guests.builtRpm}/rpms/uml-check-rpm-toolchain/uml-built-1.0-1.x86_64.rpm
+        test -e ${guests.builtHello}/rpms/uml-check-hello-toolchain/hello-${pkgs.hello.version}-1.x86_64.rpm
+        test "$(${guests.extractHello}/usr/bin/hello)" = "Hello, world!"
+        test "$(cat ${guests.fillHello}/nix-support/full-name)" = uml-check-fill-hello
+        test "$(cat ${guests.extractDebScripts}/usr/share/uml-notes/pre-state)" = preinst-ran
+        test "$(cat ${guests.extractDebScripts}/usr/share/uml-notes/state)" = configured
+        test "$(cat ${guests.extractDebScripts}/usr/share/uml-notes/payload)" = notes-payload
+        test "$(cat ${guests.fillDebScripts}/nix-support/full-name)" = uml-check-fill-deb-scripts
         touch $out
       '';
 
