@@ -69,13 +69,18 @@ let
     ln -s /proc/self/fd/1 /dev/stdout
     ln -s /proc/self/fd/2 /dev/stderr
 
-    echo "mounting host store and exchange directory..."
     mkdir -p ${storeDir}
     mount -t hostfs none ${storeDir} -o "$UML_STORE"
     mkdir -p /tmp /run
     mount -t tmpfs -o "mode=1777" none /tmp
     mkdir -p /tmp/xchg
     mount -t hostfs none /tmp/xchg -o "$UML_XCHG"
+
+    # Userspace output written to the guest console never reaches the
+    # host in a sandbox (measured: kernel messages do, PID 1's own do
+    # not), so from here stage 2 logs to a file the builder replays.
+    exec >>/tmp/xchg/stage2.log 2>&1
+    echo "guest store and exchange directory mounted"
 
     # `/etc` and the mount points below already exist: the hostfs root
     # mounts read-only, so the host pre-creates them (see `umlRunCommand`).
@@ -181,18 +186,26 @@ let
       EOF
 
       ${coreutils}/bin/chmod +x ./run-uml
-      # The guest console goes to a file, not the build log: piped
-      # straight through, the kernel's early messages never arrive in a
-      # sandbox (measured: only blank lines), while a file captures all
-      # of it, as the vivarium runner's per-guest console log does. The
-      # replay below keeps a failed boot reading like the QEMU path, and
-      # `-K` keeps the file itself.
+      # The guest console goes to a file: piped straight to the build
+      # log, the kernel's early messages never arrive in a sandbox
+      # (measured: only blank lines), while a file captures all of it,
+      # as the vivarium runner's per-guest console log does. Userspace
+      # output needs its own file on top: PID 1's writes never reach the
+      # host console there at all (measured), so stage 2 redirects into
+      # xchg/stage2.log. A background tail streams both live, as QEMU's
+      # serial line does; a failed boot replays both files, so nothing is
+      # lost to the stream's race at shutdown, and `-K` keeps them.
+      ${coreutils}/bin/touch console.log xchg/stage2.log
+      ${coreutils}/bin/tail -q -n +1 -f console.log xchg/stage2.log &
+      tailpid=$!
       kernel_rc=0
       ./run-uml >console.log 2>&1 || kernel_rc=$?
-      ${coreutils}/bin/cat console.log
+      kill "$tailpid" 2>/dev/null || true
+      wait "$tailpid" 2>/dev/null || true
 
       if ! test -e xchg/in-vm-exit; then
         echo "UML guest didn't produce an exit code (kernel exit $kernel_rc)."
+        ${coreutils}/bin/cat console.log xchg/stage2.log
         exit 1
       fi
 
