@@ -1838,8 +1838,8 @@ let
 
     # Do the UML guest primitives behave like vmTools.runInLinuxVM,
     # minus KVM? One guest per case, each asserting its own output on
-    # the host below. Slow (nine boots), but the alternative is finding
-    # out from a red disk image.
+    # the host below. Slow (fourteen boots), but the alternative is
+    # finding out from a red disk image.
     check-uml-vm-tools =
       let
         umlRun = umlVmTools.runInLinuxVM;
@@ -1925,6 +1925,196 @@ let
           '';
           # The same image written to the emulated MTD and copied out.
           extractedMtd = umlVmTools.extractMTDfs { file = guests.mtdImage; };
+          # A scriptless RPM with a marker file, built on the host: the
+          # fill ports need real packages, and this one has no scripts
+          # or dependencies to trip over.
+          rpmTestRpm =
+            let
+              spec = pkgs.writeText "uml-proof.spec" ''
+                Name: uml-proof
+                Version: 1.0
+                Release: 1
+                Summary: proof payload
+                License: MIT
+
+                %description
+                proof
+
+                %install
+                mkdir -p %{buildroot}/usr/share/uml-proof %{buildroot}/tmp
+                echo rpm-marker-content > %{buildroot}/usr/share/uml-proof/marker
+
+                %files
+                /usr/share/uml-proof/marker
+                %dir /tmp
+              '';
+            in
+            pkgs.runCommand "uml-check-rpm" { buildInputs = [ pkgs.rpm ]; } ''
+              # rpmbuild wants a database and a temp dir it can write;
+              # point all three at the build directory.
+              export HOME=$PWD/home
+              mkdir -p $HOME rpmroot/{BUILD,RPMS,SRPMS,SOURCES,SPECS} rpmroot/var/lib/rpm rpmroot/tmp $out
+              cat > $HOME/.rpmmacros <<EOF
+              %_topdir $PWD/rpmroot
+              %_dbpath $PWD/rpmroot/var/lib/rpm
+              %_tmppath $PWD/rpmroot/tmp
+              EOF
+              rpm --initdb
+              cp ${spec} rpmroot/SPECS/proof.spec
+              rpmbuild -bb --define "_topdir $PWD/rpmroot" rpmroot/SPECS/proof.spec
+              cp rpmroot/RPMS/*/*.rpm $out/proof.rpm
+            '';
+          # The RPM installed into an image. `preInstall` stages the
+          # store's rpm and cpio under /mnt (with the loader): the
+          # proof RPM is not a distro, so the image has no native ones,
+          # and the port itself stays byte-identical.
+          fillRpm = umlVmTools.fillDiskWithRPMs {
+            size = 64;
+            rpms = [ "${guests.rpmTestRpm}/proof.rpm" ];
+            name = "uml-check-fill-rpm";
+            fullName = "uml-check-fill-rpm";
+            preInstall = ''
+              mkdir -p /mnt/usr/bin /mnt/lib64
+              ln -s ${pkgs.rpm}/bin/rpm /mnt/usr/bin/rpm
+              ln -s ${pkgs.cpio}/bin/cpio /mnt/usr/bin/cpio
+              ln -s ${pkgs.glibc}/lib/ld-linux-x86-64.so.2 /mnt/lib64/ld-linux-x86-64.so.2
+            '';
+          };
+          # The filled image loop-mounted read-only, copied out.
+          extractedRpm = umlVmTools.extractFs { file = "${guests.fillRpm}/disk-image.raw"; };
+          # Two bare Debs built on the host. The shim lays what a bare
+          # image cannot provide: store-backed `dpkg` (with the loader)
+          # and the `start-stop-daemon` the install dance moves aside;
+          # neither is ever a distro, so both are check scaffolding and
+          # the port stays byte-identical.
+          debShim = pkgs.runCommand "uml-check-deb-shim" { buildInputs = [ pkgs.dpkg ]; } ''
+            mkdir -p shim/DEBIAN shim/usr/bin shim/sbin shim/lib64 shim/etc shim/var/lib/dpkg $out
+            cat > shim/DEBIAN/control <<EOF
+            Package: uml-shim
+            Version: 1.0
+            Architecture: amd64
+            Maintainer: none
+            Description: store shims for the proof
+            EOF
+            ln -s ${pkgs.dpkg}/bin/dpkg shim/usr/bin/dpkg
+            ln -s ${pkgs.glibc}/lib/ld-linux-x86-64.so.2 shim/lib64/ld-linux-x86-64.so.2
+            echo '#!/bin/true' > shim/sbin/start-stop-daemon
+            chmod 755 shim/sbin/start-stop-daemon
+            # The skeleton a distro's base files would lay: the port's
+            # DB setup only touches these, never creates them.
+            touch shim/etc/shells shim/var/lib/dpkg/status shim/var/lib/dpkg/available shim/var/lib/dpkg/diversions
+            dpkg-deb --build shim $out/shim.deb
+          '';
+          debTrivial = pkgs.runCommand "uml-check-deb-trivial" { buildInputs = [ pkgs.dpkg ]; } ''
+            mkdir -p trivial/DEBIAN trivial/usr/share/uml-proof $out
+            cat > trivial/DEBIAN/control <<EOF
+            Package: uml-proof
+            Version: 1.0
+            Architecture: amd64
+            Maintainer: none
+            Description: proof payload
+            EOF
+            echo deb-marker-content > trivial/usr/share/uml-proof/marker
+            dpkg-deb --build trivial $out/proof.deb
+          '';
+          # The Debs installed into an image, then copied back out.
+          fillDeb = umlVmTools.fillDiskWithDebs {
+            size = 64;
+            debs = [[ "${guests.debShim}/shim.deb" "${guests.debTrivial}/proof.deb" ]];
+            name = "uml-check-fill-deb";
+            fullName = "uml-check-fill-deb";
+            postInstall = ":";
+          };
+          extractDeb = umlVmTools.extractFs { file = "${guests.fillDeb}/disk-image.raw"; };
+          # An image carrying an RPM toolchain as store symlinks (plus
+          # the loader and a shell): the root `buildRPM` needs. Native
+          # `PATH` after its `postHook` sees only the image, so the
+          # image carries everything the phases touch -- compiler,
+          # archiver, build tools and a coreutils-class set for the
+          # stdenv scaffolding itself. Host `mkfs.ext4 -d` lays it
+          # without mounting.
+          rpmToolchain = pkgs.runCommand "uml-check-rpm-toolchain" {
+            buildInputs = [
+              pkgs.e2fsprogs
+              pkgs.rpm
+            ];
+          } ''
+            mkdir -p root/{bin,usr/bin,lib64,etc,tmp} root/var/lib/rpm
+            ln -s ${pkgs.pkgsStatic.busybox}/bin/busybox root/bin/busybox
+            ln -s busybox root/bin/sh
+            for t in rpm rpmbuild rpmspec; do ln -s ${pkgs.rpm}/bin/$t root/usr/bin/$t; done
+            for p in ${pkgs.coreutils} ${pkgs.findutils} ${pkgs.gnugrep} ${pkgs.gnutar} ${pkgs.gzip} ${pkgs.gnumake} ${pkgs.gcc} ${pkgs.file}; do
+              for b in $p/bin/*; do ln -s $b root/usr/bin/; done
+            done
+            ln -s ${pkgs.glibc}/lib/ld-linux-x86-64.so.2 root/lib64/ld-linux-x86-64.so.2
+            # An empty RPM database: the image is no distro, but the
+            # build's info phase queries one.
+            rpm --initdb --dbpath $PWD/root/var/lib/rpm
+            truncate -s 64M $out
+            ${pkgs.e2fsprogs}/bin/mkfs.ext4 -F -L umlcheck -d root $out
+          '';
+          # A source tarball with a spec that compiles one C file.
+          rpmSrc =
+            let
+              helloC = pkgs.writeText "hello.c" ''
+                #include <stdio.h>
+                int main(void) { printf("built\n"); return 0; }
+              '';
+              proofSpec = pkgs.writeText "uml-built.spec" ''
+                Name: uml-built
+                Version: 1.0
+                Release: 1
+                Summary: proof build
+                License: MIT
+                Source0: uml-built-1.0.tar.gz
+
+                %description
+                proof
+
+                %prep
+                %setup -q
+
+                %build
+                gcc -O2 -o hello hello.c
+
+                %install
+                mkdir -p %{buildroot}/usr/bin
+                install -m755 hello %{buildroot}/usr/bin/uml-built-hello
+
+                %files
+                /usr/bin/uml-built-hello
+              '';
+            in
+            pkgs.runCommand "uml-check-rpm-src.tar.gz" {
+              buildInputs = [
+                pkgs.gnutar
+                pkgs.gzip
+              ];
+            } ''
+              mkdir -p pkg/uml-built-1.0
+              cp ${helloC} pkg/uml-built-1.0/hello.c
+              cp ${proofSpec} pkg/uml-built-1.0/uml-built.spec
+              tar -czf $out -C pkg uml-built-1.0
+            '';
+          # The tarball built to RPMs inside the toolchain image. The
+          # macros switch off what a bare image cannot do: buildroot
+          # policies (which want distro tools) and debuginfo (which
+          # wants find-debuginfo).
+          builtRpm = umlVmTools.buildRPM {
+            diskImage = guests.rpmToolchain;
+            diskImageFormat = "raw";
+            name = "uml-check-built-rpm";
+            src = guests.rpmSrc;
+            preBuild = ''
+              mkdir -p /etc/rpm
+              echo "%__os_install_post %{nil}" >> /etc/rpm/macros
+              echo "%debug_package %{nil}" >> /etc/rpm/macros
+            '';
+            postBuild = ":";
+            preInstall = ":";
+            postInstall = ":";
+            extraRPMs = "";
+          };
         };
         withoutKvm = lib.all (
           guest: !(builtins.elem "kvm" (guest.drvAttrs.requiredSystemFeatures or [ ]))
@@ -1948,6 +2138,11 @@ let
         test "$(cat ${guests.extracted}/nested-file)" = nested
         test "$(cat ${guests.extractedMtd}/mtd-marker)" = mtd-marker-content
         test "$(cat ${guests.extractedMtd}/mtd-nested-file)" = mtd-nested
+        test "$(cat ${guests.extractedRpm}/usr/share/uml-proof/marker)" = rpm-marker-content
+        test "$(cat ${guests.fillRpm}/nix-support/full-name)" = uml-check-fill-rpm
+        test "$(cat ${guests.extractDeb}/usr/share/uml-proof/marker)" = deb-marker-content
+        test "$(cat ${guests.fillDeb}/nix-support/full-name)" = uml-check-fill-deb
+        test -e ${guests.builtRpm}/rpms/uml-check-rpm-toolchain/uml-built-1.0-1.x86_64.rpm
         touch $out
       '';
 
