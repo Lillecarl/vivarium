@@ -17,8 +17,8 @@
   */
   opensuse-leap-16_0 = {
     disk = fetchurl {
-      url = "https://download.opensuse.org/distribution/leap/16.0/appliances/Leap-16.0-Minimal-VM.x86_64-Cloud-Build18.71.qcow2";
-      hash = "sha256-wabFDFGkRxmUZibF0+oiuETx6DHmq/XzH0Y8ZaJqb9w=";
+      url = "https://download.opensuse.org/distribution/leap/16.0/appliances/Leap-16.0-Minimal-VM.x86_64-Cloud-Build18.75.qcow2";
+      hash = "sha256-cZMEeciYxOg8t6JSFbZIyZG9EmU1BEmwIepsPh92zuA=";
     };
     partition = 3;
     kernelParams = [
