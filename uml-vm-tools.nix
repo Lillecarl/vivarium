@@ -7,9 +7,14 @@
 # child of the builder, which is why this works in a Nix build sandbox and
 # on machines without KVM.
 #
-# So far `runInLinuxVM`, `runInLinuxImage`, `extractFs` and
-# `extractMTDfs`. `fillDiskWithRPMs`, `fillDiskWithDebs` and `buildRPM`
-# are distro tooling over the same host/guest split and come next.
+# Covered: `runInLinuxVM`, `runInLinuxImage`, `extractFs`,
+# `extractMTDfs`, `defaultCreateRootFS`, `fillDiskWithRPMs`,
+# `fillDiskWithDebs` and `buildRPM`. Left out on purpose:
+# `makeImageTestScript` generates a QEMU command for interactive use,
+# and a kept `run-uml` already covers that need; the distro pipelines
+# (`makeImageFromRPMDist`, `makeImageFromDebDist`, `diskImages`) and
+# the closure generators compose from the ported primitives on the
+# host side, so they ride the overlay unchanged.
 { pkgs
 , lib ? pkgs.lib
 , storeDir ? builtins.storeDir
@@ -339,9 +344,31 @@ let
       echo "${fullName}" > ${destination}/nix-support/full-name
     '';
 
+  /*
+    A bash fragment that formats the attached image and mounts it at
+    `/mnt`, for the disk-filling ports. nixpkgs'
+    `defaultCreateRootFS` (`pkgs/build-support/vm/default.nix:365`)
+    with the device retargeted: `/dev/ubda`, the only disk UML
+    attaches, for QEMU's `/dev/${hd}`. One required `-p`: `/mnt`
+    arrives pre-created from the host (the hostfs root mounts
+    read-only), where QEMU's fresh tmpfs root never has it.
+  */
+  defaultCreateRootFS = ''
+    mkdir -p /mnt
+    ${pkgs.e2fsprogs}/bin/mkfs.ext4 /dev/ubda
+    ${pkgs.util-linux}/bin/mount -t ext4 /dev/ubda /mnt
+
+    if test -e /mnt/.debug; then
+      exec ${bash}/bin/sh
+    fi
+    touch /mnt/.debug
+
+    mkdir /mnt/proc /mnt/dev /mnt/sys
+  '';
+
 in
 rec {
-  inherit umlKernel createEmptyImage;
+  inherit umlKernel createEmptyImage defaultCreateRootFS;
 
   /*
     Drop-in for `vmTools.runInLinuxVM`
@@ -493,5 +520,302 @@ rec {
           cp -R tmp/* $out/
         '';
       }
+    );
+
+  /*
+    Drop-in for `vmTools.fillDiskWithRPMs`
+    (`pkgs/build-support/vm/default.nix:533`): format the image with
+    `createRootFS`, unpack the RPMs under `/mnt`, and install them
+    through a chroot. The `buildCommand` is nixpkgs' line for line,
+    with only the tool paths retargeted; `createRootFS` defaults to
+    the `defaultCreateRootFS` above. `preVM` extends nixpkgs'
+    `createEmptyImage` with the raw conversion, as in `runInLinuxImage`:
+    UML reads block devices, not qcow2.
+  */
+  fillDiskWithRPMs =
+    {
+      size ? 4096,
+      rpms,
+      name,
+      fullName,
+      preInstall ? "",
+      postInstall ? "",
+      runScripts ? true,
+      createRootFS ? defaultCreateRootFS,
+      QEMU_OPTS ? "",
+      memSize ? 512,
+      unifiedSystemDir ? false,
+    }:
+
+    runInLinuxVM (
+      stdenv.mkDerivation {
+        inherit
+          name
+          preInstall
+          postInstall
+          rpms
+          QEMU_OPTS
+          memSize
+          ;
+        preVM =
+          createEmptyImage { inherit size fullName; }
+          + ''
+            ${pkgs.buildPackages.qemu_kvm}/bin/qemu-img convert -O raw $diskImage $out/disk-image.raw
+            diskImage=$out/disk-image.raw
+          '';
+
+        buildCommand = ''
+          ${createRootFS}
+
+          chroot=$(type -tP chroot)
+
+          # Make the Nix store available in /mnt, because that's where the RPMs live.
+          mkdir -p /mnt${storeDir}
+          ${pkgs.util-linux}/bin/mount -o bind ${storeDir} /mnt${storeDir}
+          # Some programs may require devices in /dev to be available (e.g. /dev/random)
+          ${pkgs.util-linux}/bin/mount -o bind /dev /mnt/dev
+
+          # Newer distributions like Fedora 18 require /lib etc. to be
+          # symlinked to /usr.
+          ${lib.optionalString unifiedSystemDir ''
+            mkdir -p /mnt/usr/bin /mnt/usr/lib /mnt/usr/lib64
+            ln -s /usr/bin /mnt/bin
+            ln -s /usr/bin /mnt/sbin
+            ln -s /usr/bin /mnt/usr/sbin
+            ln -s /usr/lib /mnt/lib
+            ln -s /usr/lib64 /mnt/lib64
+            ${pkgs.util-linux}/bin/mount -t proc none /mnt/proc
+          ''}
+
+          echo "unpacking RPMs..."
+          set +o pipefail
+          for i in "''${rpms[@]}"; do
+              echo "$i..."
+              ${pkgs.rpm}/bin/rpm2cpio "$i" | chroot /mnt ${pkgs.cpio}/bin/cpio -i --make-directories --unconditional
+          done
+
+          eval "$preInstall"
+
+          echo "initialising RPM DB..."
+          PATH=/usr/bin:/bin:/usr/sbin:/sbin $chroot /mnt \
+            ldconfig -v || true
+          PATH=/usr/bin:/bin:/usr/sbin:/sbin $chroot /mnt \
+            rpm --initdb
+
+          ${pkgs.util-linux}/bin/mount -o bind /tmp /mnt/tmp
+
+          echo "installing RPMs..."
+          PATH=/usr/bin:/bin:/usr/sbin:/sbin $chroot /mnt \
+            rpm -iv --nosignature ${lib.optionalString (!runScripts) "--noscripts"} "''${rpms[@]}"
+
+          echo "running post-install script..."
+          eval "$postInstall"
+
+          rm /mnt/.debug
+
+          ${pkgs.util-linux}/bin/umount /mnt${storeDir} /mnt/tmp /mnt/dev ${lib.optionalString unifiedSystemDir "/mnt/proc"}
+          ${pkgs.util-linux}/bin/umount /mnt
+        '';
+
+        passthru = { inherit fullName; };
+      }
+    );
+
+  /*
+    Drop-in for `vmTools.fillDiskWithDebs`
+    (`pkgs/build-support/vm/default.nix:724`): format the image with
+    `createRootFS`, unpack the Debs under `/mnt`, and install them
+    through a chroot, component by component. The `buildCommand` is
+    nixpkgs' line for line, with only the tool paths retargeted;
+    `preVM` extends `createEmptyImage` with the raw conversion, as
+    above. `debs` keeps its grouped shape (list of lists); `...`
+    absorbs the rest into the derivation, as there.
+  */
+  fillDiskWithDebs =
+    {
+      size ? 4096,
+      debs,
+      name,
+      fullName,
+      postInstall ? null,
+      createRootFS ? defaultCreateRootFS,
+      QEMU_OPTS ? "",
+      memSize ? 512,
+      ...
+    }@args:
+
+    runInLinuxVM (
+      stdenv.mkDerivation (
+        {
+          inherit
+            name
+            postInstall
+            QEMU_OPTS
+            memSize
+            ;
+
+          debsFlat = lib.flatten debs;
+          debsGrouped = map toString debs;
+
+          preVM =
+            createEmptyImage { inherit size fullName; }
+            + ''
+              ${pkgs.buildPackages.qemu_kvm}/bin/qemu-img convert -O raw $diskImage $out/disk-image.raw
+              diskImage=$out/disk-image.raw
+            '';
+
+          buildCommand = ''
+            ${createRootFS}
+
+            PATH=$PATH:${
+              lib.makeBinPath [
+                pkgs.dpkg
+                pkgs.glibc
+                pkgs.xz
+              ]
+            }
+
+            # Unpack the .debs.  We do this to prevent pre-install scripts
+            # (which have lots of circular dependencies) from barfing.
+            echo "unpacking Debs..."
+
+            for deb in "''${debsFlat[@]}"; do
+              echo "$deb..."
+              dpkg-deb --extract "$deb" /mnt
+            done
+
+            # Make the Nix store available in /mnt, because that's where the .debs live.
+            mkdir -p /mnt/inst${storeDir}
+            ${pkgs.util-linux}/bin/mount -o bind ${storeDir} /mnt/inst${storeDir}
+            ${pkgs.util-linux}/bin/mount -o bind /proc /mnt/proc
+            ${pkgs.util-linux}/bin/mount -o bind /dev /mnt/dev
+
+            # Misc. files/directories assumed by various packages.
+            echo "initialising Dpkg DB..."
+            touch /mnt/etc/shells
+            touch /mnt/var/lib/dpkg/status
+            touch /mnt/var/lib/dpkg/available
+            touch /mnt/var/lib/dpkg/diversions
+
+            # Now install the .debs.  This is basically just to register
+            # them with dpkg and to make their pre/post-install scripts
+            # run.
+            echo "installing Debs..."
+
+            export DEBIAN_FRONTEND=noninteractive
+
+            for component in "''${debsGrouped[@]}"; do
+              echo
+              echo ">>> INSTALLING COMPONENT: $component"
+              debs=
+              for i in $component; do
+                debs="$debs /inst/$i";
+              done
+              chroot=$(type -tP chroot)
+
+              # Create a fake start-stop-daemon script, as done in debootstrap.
+              mv "/mnt/sbin/start-stop-daemon" "/mnt/sbin/start-stop-daemon.REAL"
+              echo "#!/bin/true" > "/mnt/sbin/start-stop-daemon"
+              chmod 755 "/mnt/sbin/start-stop-daemon"
+
+              PATH=/usr/bin:/bin:/usr/sbin:/sbin $chroot /mnt \
+                /usr/bin/dpkg --install --force-all $debs < /dev/null || true
+
+              # Move the real start-stop-daemon back into its place.
+              mv "/mnt/sbin/start-stop-daemon.REAL" "/mnt/sbin/start-stop-daemon"
+            done
+
+            echo "running post-install script..."
+            eval "$postInstall"
+
+            rm /mnt/.debug
+
+            ${pkgs.util-linux}/bin/umount /mnt/inst${storeDir}
+            ${pkgs.util-linux}/bin/umount /mnt/proc
+            ${pkgs.util-linux}/bin/umount /mnt/dev
+            ${pkgs.util-linux}/bin/umount /mnt
+          '';
+
+          passthru = { inherit fullName; };
+        }
+        // args
+      )
+    );
+
+  /*
+    Drop-in for `vmTools.buildRPM`
+    (`pkgs/build-support/vm/default.nix:650`): build the tarball `src`
+    (which must contain an RPM specfile) with `rpmbuild` inside the
+    distribution installed in `diskImage`, and copy the resulting RPMs
+    to `$out`. The derivation is nixpkgs' verbatim, run through
+    `runInLinuxImage` here instead of there: `prepareImagePhase`,
+    `sysInfoPhase`, `buildPhase` and `installPhase` all execute under
+    the image's root with its native toolchain.
+  */
+  buildRPM =
+    attrs:
+    runInLinuxImage (
+      stdenv.mkDerivation (
+        {
+          prePhases = [
+            "prepareImagePhase"
+            "sysInfoPhase"
+          ];
+          dontConfigure = true;
+
+          outDir = "rpms/${attrs.diskImage.name}";
+
+          prepareImagePhase = ''
+            if test -n "$extraRPMs"; then
+              for rpmdir in $extraRPMs ; do
+                rpm -iv $(ls $rpmdir/rpms/*/*.rpm | grep -v 'src\.rpm' | sort | head -1)
+              done
+            fi
+          '';
+
+          sysInfoPhase = ''
+            echo "System/kernel: $(uname -a)"
+            if test -e /etc/fedora-release; then echo "Fedora release: $(cat /etc/fedora-release)"; fi
+            if test -e /etc/SuSE-release; then echo "SUSE release: $(cat /etc/SuSE-release)"; fi
+            echo "installed RPM packages"
+            rpm -qa --qf "%{Name}-%{Version}-%{Release} (%{Arch}; %{Distribution}; %{Vendor})\n"
+          '';
+
+          buildPhase = ''
+            eval "$preBuild"
+
+            srcName="$(rpmspec --srpm -q --qf '%{source}' *.spec)"
+            cp "$src" "$srcName" # `ln' doesn't work always work: RPM requires that the file is owned by root
+
+            export HOME=/tmp/home
+            mkdir $HOME
+
+            rpmout=/tmp/rpmout
+            mkdir $rpmout $rpmout/SPECS $rpmout/BUILD $rpmout/RPMS $rpmout/SRPMS
+
+            echo "%_topdir $rpmout" >> $HOME/.rpmmacros
+
+            if [ `uname -m` = i686 ]; then extra="--target i686-linux"; fi
+            rpmbuild -vv $extra -ta "$srcName"
+
+            eval "$postBuild"
+          '';
+
+          installPhase = ''
+            eval "$preInstall"
+
+            mkdir -p $out/$outDir
+            find $rpmout -name "*.rpm" -exec cp {} $out/$outDir \;
+
+            for i in $out/$outDir/*.rpm; do
+              echo "Generated RPM/SRPM: $i"
+              rpm -qip $i
+            done
+
+            eval "$postInstall"
+          ''; # */
+        }
+        // attrs
+      )
     );
 }

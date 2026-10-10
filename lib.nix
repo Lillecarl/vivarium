@@ -42,7 +42,9 @@ rec {
   /**
     Build-time guest primitives backed by User-Mode Linux, with the same
     call shapes as `pkgs.vmTools` (`runInLinuxVM`, `runInLinuxImage`,
-    `extractFs`, `extractMTDfs`, `createEmptyImage`). No `/dev/kvm`, no `kvm` feature: the guest is a process, so
+    `extractFs`, `extractMTDfs`, `defaultCreateRootFS`,
+    `fillDiskWithRPMs`, `fillDiskWithDebs`, `buildRPM`,
+    `createEmptyImage`). No `/dev/kvm`, no `kvm` feature: the guest is a process, so
     these build in a sandbox and on machines without KVM. See
     `uml-vm-tools.nix`.
   */
@@ -57,7 +59,7 @@ rec {
   overlays = {
     uml-vm-tools = final: prev: {
       vmTools = prev.vmTools // {
-        inherit (umlVmTools) runInLinuxVM runInLinuxImage extractFs extractMTDfs createEmptyImage;
+        inherit (umlVmTools) runInLinuxVM runInLinuxImage extractFs extractMTDfs defaultCreateRootFS fillDiskWithRPMs fillDiskWithDebs buildRPM createEmptyImage;
       };
     };
   };
