@@ -7,11 +7,9 @@
 # child of the builder, which is why this works in a Nix build sandbox and
 # on machines without KVM.
 #
-# So far `runInLinuxVM`, `runInLinuxImage` and `extractFs`. `extractMTDfs`
-# needs the MTD subsystem, which the guest kernel leaves out (`CONFIG_MTD`
-# is unset in its built config); `fillDiskWithRPMs`, `fillDiskWithDebs`
-# and `buildRPM` are distro tooling over the same host/guest split and
-# come next.
+# So far `runInLinuxVM`, `runInLinuxImage`, `extractFs` and
+# `extractMTDfs`. `fillDiskWithRPMs`, `fillDiskWithDebs` and `buildRPM`
+# are distro tooling over the same host/guest split and come next.
 { pkgs
 , lib ? pkgs.lib
 , storeDir ? builtins.storeDir
@@ -449,6 +447,50 @@ rec {
           mount -o loop,ro,ufstype=44bsd ${lib.optionalString (fs != null) "-t ${fs} "}${file} tmp ||
             mount -o loop,ro ${lib.optionalString (fs != null) "-t ${fs} "}${file} tmp
           cp -Rv tmp/* $out/ || exit 0
+        '';
+      }
+    );
+
+  /*
+    Drop-in for `vmTools.extractMTDfs`
+    (`pkgs/build-support/vm/default.nix:454`): copy the file onto the
+    RAM-emulated MTD device, mount its block interface and copy the
+    tree to `$out`. The `modprobe` and `/lib` lines are gone: `mtd`,
+    `mtdram`, `mtdblock` and `jffs2` are built into the guest kernel
+    (`CONFIG_MTD_MTDRAM=y` and friends in its built config, sized by
+    `MTDRAM_TOTAL_SIZE=131072` to match nixpkgs' `modprobe mtdram
+    total_size=131072`), and the char device (`/dev/mtd0`) ships with
+    the MTD core, so there is nothing to load.
+
+    One deliberate divergence: with `fs = null` (the default) this
+    mounts `-t jffs2` instead of leaving detection to `mount`.
+    Detection cannot work -- `mount` without `-t` skips `nodev`
+    filesystems, `jffs2` sets no `FS_REQUIRES_DEV` (verified in the
+    6.18.55 tree), and `blkid` carries no jffs2 prober -- so nixpkgs'
+    bare `mount` fails the same way on every backend (it has no test
+    and no callers). An explicit `fs` still passes through for other
+    MTD filesystems.
+  */
+  extractMTDfs =
+    {
+      file,
+      fs ? null,
+    }:
+    runInLinuxVM (
+      stdenv.mkDerivation {
+        name = "extract-file-mtd";
+        buildInputs = [
+          pkgs.util-linux
+          pkgs.mtdutils
+        ];
+        buildCommand = ''
+          mkdir -p $out
+          mkdir -p tmp
+
+          dd if=${file} of=/dev/mtd0
+          mount -t ${if fs != null then fs else "jffs2"} /dev/mtdblock0 tmp
+
+          cp -R tmp/* $out/
         '';
       }
     );
