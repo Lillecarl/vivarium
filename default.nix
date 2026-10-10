@@ -1977,77 +1977,43 @@ let
           };
           # The filled image loop-mounted read-only, copied out.
           extractedRpm = umlVmTools.extractFs { file = "${guests.fillRpm}/disk-image.raw"; };
-          # Two bare Debs built on the host. The shim lays what a bare
-          # image cannot provide: store-backed `dpkg` (with the loader)
-          # and the `start-stop-daemon` the install dance moves aside;
-          # neither is ever a distro, so both are check scaffolding and
-          # the port stays byte-identical.
-          debShim = pkgs.runCommand "uml-check-deb-shim" { buildInputs = [ pkgs.dpkg ]; } ''
-            mkdir -p shim/DEBIAN shim/usr/bin shim/sbin shim/lib64 shim/etc shim/var/lib/dpkg $out
-            cat > shim/DEBIAN/control <<EOF
-            Package: uml-shim
-            Version: 1.0
-            Architecture: amd64
-            Maintainer: none
-            Description: store shims for the proof
-            EOF
-            ln -s ${pkgs.dpkg}/bin/dpkg shim/usr/bin/dpkg
-            ln -s ${pkgs.glibc}/lib/ld-linux-x86-64.so.2 shim/lib64/ld-linux-x86-64.so.2
-            echo '#!/bin/true' > shim/sbin/start-stop-daemon
-            chmod 755 shim/sbin/start-stop-daemon
-            # The skeleton a distro's base files would lay: the port's
-            # DB setup only touches these, never creates them.
-            touch shim/etc/shells shim/var/lib/dpkg/status shim/var/lib/dpkg/available shim/var/lib/dpkg/diversions
-            dpkg-deb --build shim $out/shim.deb
-          '';
-          debTrivial = pkgs.runCommand "uml-check-deb-trivial" { buildInputs = [ pkgs.dpkg ]; } ''
-            mkdir -p trivial/DEBIAN trivial/usr/share/uml-proof $out
-            cat > trivial/DEBIAN/control <<EOF
-            Package: uml-proof
-            Version: 1.0
-            Architecture: amd64
-            Maintainer: none
-            Description: proof payload
-            EOF
-            echo deb-marker-content > trivial/usr/share/uml-proof/marker
-            dpkg-deb --build trivial $out/proof.deb
-          '';
+          # The shim and a payload Deb from the library builders.
+          debShim = umlVmTools.makeDebShim { };
+          debTrivial = umlVmTools.makeDeb {
+            name = "uml-proof";
+            description = "proof payload";
+            files = ''
+              mkdir -p pkg/usr/share/uml-proof
+              echo deb-marker-content > pkg/usr/share/uml-proof/marker
+            '';
+          };
           # The Debs installed into an image, then copied back out.
           fillDeb = umlVmTools.fillDiskWithDebs {
             size = 64;
-            debs = [[ "${guests.debShim}/shim.deb" "${guests.debTrivial}/proof.deb" ]];
+            debs = [[ "${guests.debShim}" "${guests.debTrivial}" ]];
             name = "uml-check-fill-deb";
             fullName = "uml-check-fill-deb";
             postInstall = ":";
           };
           extractDeb = umlVmTools.extractFs { file = "${guests.fillDeb}/disk-image.raw"; };
-          # An image carrying an RPM toolchain as store symlinks (plus
-          # the loader and a shell): the root `buildRPM` needs. Native
-          # `PATH` after its `postHook` sees only the image, so the
-          # image carries everything the phases touch -- compiler,
-          # archiver, build tools and a coreutils-class set for the
-          # stdenv scaffolding itself. Host `mkfs.ext4 -d` lays it
-          # without mounting.
-          rpmToolchain = pkgs.runCommand "uml-check-rpm-toolchain" {
-            buildInputs = [
-              pkgs.e2fsprogs
-              pkgs.rpm
+          # An image carrying an RPM toolchain, from the library
+          # builder: the compiler and friends ride `tools`, since only
+          # the caller knows what the package builds with. Native
+          # `PATH` after `buildRPM`'s `postHook` sees only the image,
+          # so the image carries everything the phases touch.
+          rpmToolchain = umlVmTools.makeRPMToolchainImage {
+            name = "uml-check-rpm-toolchain";
+            tools = [
+              pkgs.coreutils
+              pkgs.findutils
+              pkgs.gnugrep
+              pkgs.gnutar
+              pkgs.gzip
+              pkgs.gnumake
+              pkgs.gcc
+              pkgs.file
             ];
-          } ''
-            mkdir -p root/{bin,usr/bin,lib64,etc,tmp} root/var/lib/rpm
-            ln -s ${pkgs.pkgsStatic.busybox}/bin/busybox root/bin/busybox
-            ln -s busybox root/bin/sh
-            for t in rpm rpmbuild rpmspec; do ln -s ${pkgs.rpm}/bin/$t root/usr/bin/$t; done
-            for p in ${pkgs.coreutils} ${pkgs.findutils} ${pkgs.gnugrep} ${pkgs.gnutar} ${pkgs.gzip} ${pkgs.gnumake} ${pkgs.gcc} ${pkgs.file}; do
-              for b in $p/bin/*; do ln -s $b root/usr/bin/; done
-            done
-            ln -s ${pkgs.glibc}/lib/ld-linux-x86-64.so.2 root/lib64/ld-linux-x86-64.so.2
-            # An empty RPM database: the image is no distro, but the
-            # build's info phase queries one.
-            rpm --initdb --dbpath $PWD/root/var/lib/rpm
-            truncate -s 64M $out
-            ${pkgs.e2fsprogs}/bin/mkfs.ext4 -F -L umlcheck -d root $out
-          '';
+          };
           # A source tarball with a spec that compiles one C file.
           rpmSrc =
             let
