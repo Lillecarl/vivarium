@@ -17,6 +17,13 @@
 let
   inherit (pkgs) stdenv bash coreutils busybox;
 
+  # A shell with no dynamic dependencies. The kernel execs `/stage2`
+  # before the store is mounted, so its interpreter must not live in
+  # the store the way nixpkgs' stage 2 (via its initrd) can assume.
+  # Same for the tools stage 2 mounts with: a static busybox.
+  staticBash = pkgs.pkgsStatic.bash;
+  staticBusybox = pkgs.pkgsStatic.busybox;
+
   # The guest kernel, built for ARCH=um from the host set's own kernel
   # source -- the same source the QEMU builders boot, so the guest sees
   # the same version. x86_64 only: UML is an x86 port, and the build costs
@@ -70,10 +77,10 @@ let
     mkdir -p /tmp/xchg
     mount -t hostfs none /tmp/xchg -o "$UML_XCHG"
 
+    # `/etc` and the mount points below already exist: the hostfs root
+    # mounts read-only, so the host pre-creates them (see `umlRunCommand`).
+    # Only /dev (devtmpfs) takes new entries here.
     mkdir -p /etc
-    ln -sf /proc/mounts /etc/mtab
-    echo "127.0.0.1 localhost" > /etc/hosts
-    echo "root:x:0:0:System administrator:/root:/bin/sh" > /etc/passwd
 
     source /tmp/xchg/saved-env
     if [ -f /tmp/xchg/.attrs.sh ]; then
@@ -130,19 +137,36 @@ let
 
       eval "$preVM"
 
-      # The guest root: busybox for the mounts, bash for `/bin/sh`
-      # (shebangs in the payload expect it, as in nixpkgs' stage 2), and
-      # the stage-2 script as `/stage2`. The store itself arrives over
-      # hostfs, so nothing from it is copied here.
+      # The guest root: a static busybox for the mounts, a static bash
+      # for `/bin/sh` (shebangs in the payload expect a real bash, as in
+      # nixpkgs' stage 2, and the store is not mounted yet when the
+      # kernel execs `/stage2`), and the stage-2 script itself. The store
+      # arrives over hostfs, so nothing from it is copied here.
       guestRoot=$NIX_BUILD_TOP/uml-root
       ${coreutils}/bin/mkdir -p $guestRoot/bin
-      ${coreutils}/bin/cp -p ${busybox}/bin/busybox $guestRoot/bin/busybox
+      ${coreutils}/bin/cp -p ${staticBusybox}/bin/busybox $guestRoot/bin/busybox
       for applet in mount mkdir ln cat echo ls poweroff; do
         ${coreutils}/bin/ln -s busybox "$guestRoot/bin/$applet"
       done
-      ${coreutils}/bin/ln -s ${bash}/bin/sh "$guestRoot/bin/sh"
+      ${coreutils}/bin/cp ${staticBash}/bin/bash "$guestRoot/bin/bash"
+      ${coreutils}/bin/ln -s bash "$guestRoot/bin/sh"
       ${coreutils}/bin/cp ${stage2Uml} $guestRoot/stage2
       ${coreutils}/bin/chmod +x $guestRoot/stage2
+
+      # The hostfs root mounts read-only, so stage 2 creates nothing in
+      # it: mount points and /etc arrive from here instead.
+      ${coreutils}/bin/mkdir -p $guestRoot/etc $guestRoot/tmp $guestRoot/run
+      ${coreutils}/bin/mkdir -p $guestRoot/dev $guestRoot/proc $guestRoot/sys
+      ${coreutils}/bin/mkdir -p "$guestRoot${storeDir}"
+      echo "127.0.0.1 localhost" > $guestRoot/etc/hosts
+      echo "root:x:0:0:System administrator:/root:/bin/sh" > $guestRoot/etc/passwd
+      ${coreutils}/bin/ln -sf /proc/mounts $guestRoot/etc/mtab
+
+      # UML management-console state. `uml_dir` defaults to `~/.uml`, but
+      # the sandbox's HOME has no parent for it: the mkdir fails and
+      # `make_umid` segfaults early in boot (measured). A per-build
+      # directory avoids HOME entirely, as the vivarium runner does.
+      ${coreutils}/bin/mkdir -p uml-dir
 
       # The kernel passes unknown `name=value` arguments to PID 1 as
       # environment, which is how the guest learns the two host paths
@@ -153,7 +177,7 @@ let
       # `run-uml` carries baked absolute paths.
       ${coreutils}/bin/cat > ./run-uml <<EOF
       #! ${bash}/bin/sh
-      ${umlKernel}/linux UML_STORE=${storeDir} UML_XCHG=$PWD/xchg rootfstype=hostfs rootflags=$PWD/uml-root init=/stage2 mem=''${memSize:-512}M panic=1 ''${diskImage:+ubd0=$diskImage} $UML_OPTS
+      ${umlKernel}/linux UML_STORE=${storeDir} UML_XCHG=$PWD/xchg rootfstype=hostfs rootflags=$PWD/uml-root init=/stage2 mem=''${memSize:-512}M panic=1 uml_dir=$PWD/uml-dir umid=uml ''${diskImage:+ubd0=$diskImage} $UML_OPTS
       EOF
 
       ${coreutils}/bin/chmod +x ./run-uml
