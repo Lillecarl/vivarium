@@ -1064,9 +1064,11 @@ rec {
     (`pkgs/build-support/vm/default.nix:835`): host-side Perl over the
     repositories' metadata, producing a Nix expression of `fetchurl`
     calls for the package closure. nixpkgs' body verbatim, with only
-    the tool paths retargeted and the closure script read from the
-    consumer's own nixpkgs, so it cannot skew from the `vmTools`
-    being replaced.
+    the tool paths retargeted; the closure script is the vendored
+    `./rpm-closure.pl`, which adds what upstream lacks for SUSE: a
+    `sha512` arm (openSUSE signs its packages that way and no other)
+    and top-level preference among several providers of one
+    capability (SUSE's `otherproviders()` releases).
   */
   rpmClosureGenerator =
     {
@@ -1108,7 +1110,7 @@ rec {
               ;;
           esac
         '') packagesLists}
-        perl -w ${pkgs.path + "/pkgs/build-support/vm/rpm/rpm-closure.pl"} \
+        perl -w ${./rpm-closure.pl} \
           ${
             lib.concatImapStrings (i: pl: "./packages_${toString i}.xml ${pl.snd} ") (
               lib.zipLists packagesLists urlPrefixes
@@ -1120,7 +1122,8 @@ rec {
   /*
     Drop-in for `vmTools.debClosureGenerator`
     (`pkgs/build-support/vm/default.nix:942`): same shape, over a
-    Debian/Ubuntu `Packages` file. Same retargeting as above.
+    Debian/Ubuntu `Packages` file. Same retargeting, except the
+    script stays upstream's: Debian metadata needs no extra arm.
   */
   debClosureGenerator =
     {
