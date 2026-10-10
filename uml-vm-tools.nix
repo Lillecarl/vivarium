@@ -9,8 +9,17 @@
 #
 # Covered: `runInLinuxVM`, `runInLinuxImage`, `extractFs`,
 # `extractMTDfs`, `defaultCreateRootFS`, `fillDiskWithRPMs`,
-# `fillDiskWithDebs`, `buildRPM` and `createEmptyImage`, named in
-# `names` below so the overlay (`lib.nix`) cannot drift from this set.
+# `fillDiskWithDebs`, `buildRPM`, `createEmptyImage`,
+# `rpmClosureGenerator`, `debClosureGenerator`,
+# `makeImageFromRPMDist`, `makeImageFromDebDist`, `diskImageFuns`,
+# `diskImageExtraFuns`, `diskImages` and `hd`, named in `names` below
+# so the overlay (`lib.nix`) cannot drift from this set. The makers
+# have to be ported too, not just the primitives: nixpkgs composes
+# them from its siblings inside its own `rec`, so an overlay that
+# replaced only the leaves would still boot QEMU underneath (seen
+# live: `makeImageFromRPMDist` through a leaves-only overlay starts
+# virtiofsd). Pure host-side data (`rpmDistros`, `debDistros`, the
+# package sets) needs no port and rides the overlay as is.
 # Ours on top: `createEmptyRawImage`, the empty image plus the raw
 # conversion the fill ports share, and the toolchain builders
 # (`makeStoreImage`, `makeRPMToolchainImage`, `makeDeb`,
@@ -18,10 +27,7 @@
 # callers with no distro, e.g. `buildRPM` over a symlinked compiler.
 # Left out on purpose:
 # `makeImageTestScript` generates a QEMU command for interactive use,
-# and a kept `run-uml` already covers that need; the distro pipelines
-# (`makeImageFromRPMDist`, `makeImageFromDebDist`, `diskImages`) and
-# the closure generators compose from the ported primitives on the
-# host side, so they ride the overlay unchanged.
+# and a kept `run-uml` already covers that need.
 { pkgs
 , lib ? pkgs.lib
 , storeDir ? builtins.storeDir
@@ -359,6 +365,17 @@ let
   '';
 
   /*
+    After the guest filled `$out/disk-image.raw`, refresh the qcow2
+    beside it from the raw, for `postVM`. The raw is what UML boots,
+    but consumers (and `runInLinuxImage`'s directory branch) reach for
+    `disk-image.qcow2`, which `createEmptyImage` left pristine; without
+    this the output pairs a live raw with a dead qcow2.
+  */
+  refreshQcow2Image = ''
+    ${pkgs.buildPackages.qemu_kvm}/bin/qemu-img convert -O qcow2 $out/disk-image.raw $out/disk-image.qcow2
+  '';
+
+  /*
     A writable raw image at `$out/disk-image.raw`, for derivations
     whose output is the image: `createEmptyImage` plus the conversion
     above. `fillDiskWithRPMs`, `fillDiskWithDebs` and the disk check
@@ -551,6 +568,14 @@ rec {
     "fillDiskWithDebs"
     "buildRPM"
     "createEmptyImage"
+    "rpmClosureGenerator"
+    "debClosureGenerator"
+    "makeImageFromRPMDist"
+    "makeImageFromDebDist"
+    "diskImageFuns"
+    "diskImageExtraFuns"
+    "diskImages"
+    "hd"
   ];
 
   /*
@@ -713,7 +738,8 @@ rec {
     with only the tool paths retargeted; `createRootFS` defaults to
     the `defaultCreateRootFS` above. `preVM` makes a writable raw
     image with `createEmptyRawImage`, as in `runInLinuxImage`: UML
-    reads block devices, not qcow2.
+    reads block devices, not qcow2. `postVM` refreshes the qcow2 from
+    the filled raw, so both files in `$out` are the image.
   */
   fillDiskWithRPMs =
     {
@@ -741,6 +767,8 @@ rec {
           memSize
           ;
         preVM = createEmptyRawImage { inherit size fullName; };
+
+        postVM = refreshQcow2Image;
 
         buildCommand = ''
           ${createRootFS}
@@ -810,9 +838,12 @@ rec {
     its own toolchain and the extra bind is inert; on a bare image
     the symlinked tools (the shim's dpkg above all) dangle without
     it (measured: the chrooted install dies silently behind
-    `|| true`). `preVM` makes a writable raw image, as above. `debs`
-    keeps its grouped shape (list of lists); `...` absorbs the rest
-    into the derivation, as there.
+    `|| true`). `preVM` makes a writable raw image, as above, and
+    `postVM` refreshes the qcow2 from the filled raw, as above.
+    `debs` keeps its grouped shape (list of lists); `...` absorbs
+    the rest into the derivation, as there -- a caller-passed
+    `postVM` replaces the refresh, as a caller-passed `preVM` would
+    replace the image.
   */
   fillDiskWithDebs =
     {
@@ -841,6 +872,8 @@ rec {
           debsGrouped = map toString debs;
 
           preVM = createEmptyRawImage { inherit size fullName; };
+
+          postVM = refreshQcow2Image;
 
           buildCommand = ''
             ${createRootFS}
@@ -1002,4 +1035,238 @@ rec {
         // attrs
       )
     );
+
+  /*
+    The disk nixpkgs' ports attach. QEMU's is `/dev/vda`; UML's only
+    disk is `/dev/ubda`, so callers building device paths from
+    `vmTools.hd` keep working through the overlay.
+  */
+  hd = "ubda";
+
+  /*
+    Drop-in for `vmTools.rpmClosureGenerator`
+    (`pkgs/build-support/vm/default.nix:835`): host-side Perl over the
+    repositories' metadata, producing a Nix expression of `fetchurl`
+    calls for the package closure. nixpkgs' body verbatim, with only
+    the tool paths retargeted and the closure script read from the
+    consumer's own nixpkgs, so it cannot skew from the `vmTools`
+    being replaced.
+  */
+  rpmClosureGenerator =
+    {
+      name,
+      packagesLists,
+      urlPrefixes,
+      packages,
+      archs ? [ ],
+    }:
+    assert (builtins.length packagesLists) == (builtins.length urlPrefixes);
+    pkgs.runCommand "${name}.nix"
+      {
+        nativeBuildInputs = [
+          pkgs.perl
+          pkgs.perlPackages.URI
+          pkgs.perlPackages.XMLSimple
+          pkgs.zstd
+        ];
+        inherit archs;
+      }
+      ''
+        ${lib.concatImapStrings (i: pl: ''
+          echo "decompressing ${pl}..."
+          case ${pl} in
+            *.zst)
+              zstd -d < ${pl} > ./packages_${toString i}.xml
+              ;;
+            *.xz | *.lzma)
+              xz -d < ${pl} > ./packages_${toString i}.xml
+              ;;
+            *.bz2)
+              bunzip2 < ${pl} > ./packages_${toString i}.xml
+              ;;
+            *.gz)
+              gunzip < ${pl} > ./packages_${toString i}.xml
+              ;;
+            *)
+              cp ${pl} ./packages_${toString i}.xml
+              ;;
+          esac
+        '') packagesLists}
+        perl -w ${pkgs.path + "/pkgs/build-support/vm/rpm/rpm-closure.pl"} \
+          ${
+            lib.concatImapStrings (i: pl: "./packages_${toString i}.xml ${pl.snd} ") (
+              lib.zipLists packagesLists urlPrefixes
+            )
+          } \
+          ${toString packages} > $out
+      '';
+
+  /*
+    Drop-in for `vmTools.debClosureGenerator`
+    (`pkgs/build-support/vm/default.nix:942`): same shape, over a
+    Debian/Ubuntu `Packages` file. Same retargeting as above.
+  */
+  debClosureGenerator =
+    {
+      name,
+      packagesLists,
+      urlPrefix,
+      packages,
+    }:
+
+    pkgs.runCommand "${name}.nix"
+      {
+        nativeBuildInputs = [
+          pkgs.perl
+          pkgs.dpkg
+          pkgs.nixfmt
+        ];
+      }
+      ''
+        for i in ${toString packagesLists}; do
+          echo "adding $i..."
+          case $i in
+            *.xz | *.lzma)
+              xz -d < $i >> ./Packages
+              ;;
+            *.bz2)
+              bunzip2 < $i >> ./Packages
+              ;;
+            *.gz)
+              gzip -dc < $i >> ./Packages
+              ;;
+          esac
+        done
+
+        perl -w ${pkgs.path + "/pkgs/build-support/vm/deb/deb-closure.pl"} \
+          ./Packages ${urlPrefix} ${toString packages} > $out
+        nixfmt $out
+      '';
+
+  /*
+    Drop-in for `vmTools.makeImageFromRPMDist`
+    (`pkgs/build-support/vm/default.nix:891`): the closure generator
+    above plus `fillDiskWithRPMs`. nixpkgs' body verbatim -- in this
+    scope `fillDiskWithRPMs` and `rpmClosureGenerator` are already
+    this set's, which is the whole point: through the overlay this is
+    the function that used to boot QEMU.
+  */
+  makeImageFromRPMDist =
+    {
+      name,
+      fullName,
+      size ? 4096,
+      urlPrefix ? "",
+      urlPrefixes ? [ urlPrefix ],
+      packagesList ? "",
+      packagesLists ? [ packagesList ],
+      packages,
+      extraPackages ? [ ],
+      preInstall ? "",
+      postInstall ? "",
+      archs ? [
+        "noarch"
+        "i386"
+      ],
+      runScripts ? true,
+      createRootFS ? defaultCreateRootFS,
+      QEMU_OPTS ? "",
+      memSize ? 512,
+      unifiedSystemDir ? false,
+    }:
+
+    fillDiskWithRPMs {
+      inherit
+        name
+        fullName
+        size
+        preInstall
+        postInstall
+        runScripts
+        createRootFS
+        unifiedSystemDir
+        QEMU_OPTS
+        memSize
+        ;
+      rpms = import (rpmClosureGenerator {
+        inherit
+          name
+          packagesLists
+          urlPrefixes
+          archs
+          ;
+        packages = packages ++ extraPackages;
+      }) { inherit (pkgs) fetchurl; };
+    };
+
+  /*
+    Drop-in for `vmTools.makeImageFromDebDist`
+    (`pkgs/build-support/vm/default.nix:987`): same shape, over
+    `fillDiskWithDebs`.
+  */
+  makeImageFromDebDist =
+    {
+      name,
+      fullName,
+      size ? 4096,
+      urlPrefix,
+      packagesList ? "",
+      packagesLists ? [ packagesList ],
+      packages,
+      extraPackages ? [ ],
+      postInstall ? "",
+      extraDebs ? [ ],
+      createRootFS ? defaultCreateRootFS,
+      QEMU_OPTS ? "",
+      memSize ? 512,
+      ...
+    }@args:
+
+    let
+      expr = debClosureGenerator {
+        inherit name packagesLists urlPrefix;
+        packages = packages ++ extraPackages;
+      };
+    in
+    (fillDiskWithDebs (
+      {
+        inherit
+          name
+          fullName
+          size
+          postInstall
+          createRootFS
+          QEMU_OPTS
+          memSize
+          ;
+        debs = import expr { inherit (pkgs) fetchurl; } ++ extraDebs;
+      }
+      // args
+    ))
+    // {
+      inherit expr;
+    };
+
+  /*
+    Drop-ins for `vmTools.diskImageFuns`, `diskImageExtraFuns` and
+    `diskImages` (`pkgs/build-support/vm/default.nix:1599`): the
+    makers above mapped over the distro data, which rides
+    `pkgs.vmTools` unchanged (pure host-side data, no builder in it).
+  */
+  diskImageFuns =
+    (lib.mapAttrs (
+      name: as: as2:
+      makeImageFromRPMDist (as // as2)
+    ) pkgs.vmTools.rpmDistros)
+    // (lib.mapAttrs (
+      name: as: as2:
+      makeImageFromDebDist (as // as2)
+    ) pkgs.vmTools.debDistros);
+
+  diskImageExtraFuns = lib.mapAttrs (
+    name: f: extraPackages:
+    f { inherit extraPackages; }
+  ) diskImageFuns;
+
+  diskImages = lib.mapAttrs (name: f: f { }) diskImageFuns;
 }
