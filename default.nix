@@ -1838,7 +1838,7 @@ let
 
     # Do the UML guest primitives behave like vmTools.runInLinuxVM,
     # minus KVM? One guest per case, each asserting its own output on
-    # the host below. Slow (eight boots), but the alternative is finding
+    # the host below. Slow (nine boots), but the alternative is finding
     # out from a red disk image.
     check-uml-vm-tools =
       let
@@ -1912,6 +1912,19 @@ let
           );
           # The same image loop-mounted read-only, copied out.
           extracted = umlVmTools.extractFs { file = guests.fsImage; };
+          # A jffs2 image with marker files, padded to the device size
+          # with eraseblock filler like a flash dump; the eraseblock
+          # size matches the guest's default 128 KiB.
+          mtdImage = pkgs.runCommand "uml-check-mtd-image" {
+            buildInputs = [ pkgs.mtdutils ];
+          } ''
+            mkdir -p root
+            echo mtd-marker-content > root/mtd-marker
+            echo mtd-nested > root/mtd-nested-file
+            mkfs.jffs2 -d root -o $out -e 128KiB --pad=134217728
+          '';
+          # The same image written to the emulated MTD and copied out.
+          extractedMtd = umlVmTools.extractMTDfs { file = guests.mtdImage; };
         };
         withoutKvm = lib.all (
           guest: !(builtins.elem "kvm" (guest.drvAttrs.requiredSystemFeatures or [ ]))
@@ -1933,6 +1946,8 @@ let
         test "$(cat ${guests.inImage})" = marker-content
         test "$(cat ${guests.extracted}/marker)" = marker-content
         test "$(cat ${guests.extracted}/nested-file)" = nested
+        test "$(cat ${guests.extractedMtd}/mtd-marker)" = mtd-marker-content
+        test "$(cat ${guests.extractedMtd}/mtd-nested-file)" = mtd-nested
         touch $out
       '';
 

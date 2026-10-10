@@ -319,7 +319,7 @@ let
     above it only override inputs. Needs no `kernel` job: this kernel
     comes from the package set rather than the guest, so it builds here
     and the cache keeps it. The first run pays that build; after it the
-    eight boots cost minutes.
+    nine boots cost minutes.
   */
   umlVmToolsJob = job {
     id = "uml-vm-tools";
@@ -328,7 +328,7 @@ let
     ghanix = sandboxBootstrap;
     steps = [
       (steps.build {
-        name = "Build derivations inside UML guests: trivial, structured, hooks, memory, disk, fs-image, in-image, extract";
+        name = "Build derivations inside UML guests: trivial, structured, hooks, memory, disk, fs-image, in-image, extract, mtd-extract";
         attrs = [ "check-uml-vm-tools" ];
         timeoutMinutes = 60;
       })
