@@ -69,6 +69,32 @@ let
     BLK_DEV_UBD = yes;
     TUN = yes;
 
+    # `extractMTDfs`: the MTD stack for RAM-emulated flash, built in
+    # (this kernel has no modules). `mtdram` is a vmalloc-backed test
+    # driver with no architecture gate, so UML builds it like any other
+    # target; the size matches nixpkgs' `modprobe mtdram
+    # total_size=131072`. Two upstream details, both measured in the
+    # built `.config`, not assumed:
+    # - `mtdram` sits in a menu gated on `HAS_IOMEM`, which UML's
+    #   default `NO_IOMEM=y` hides. The lever is `UML_IOMEM_EMULATION`,
+    #   which selects `INDIRECT_IOMEM` and so forces `NO_IOMEM` off --
+    #   but it is prompt-less, and the config scripts only answer
+    #   asked questions, so asking for it does nothing. The patch
+    #   below gives it a prompt (the only change), which makes it
+    #   askable. This is also why a renamed or removed symbol vanishes
+    #   silently rather than erroring.
+    # - There is no `MTD_CHAR` anymore: the char device (`/dev/mtd0`)
+    #   ships with the MTD core itself, so `MTD=y` covers it.
+    # If any of the rest goes missing from the built `.config`, its
+    # Kconfig menu asked for something UML leaves out rather than the
+    # option being unsupported -- look there first.
+    MTD = yes;
+    UML_IOMEM_EMULATION = yes;
+    MTD_MTDRAM = yes;
+    MTDRAM_TOTAL_SIZE = freeform "131072";
+    MTD_BLOCK = yes;
+    JFFS2_FS = yes;
+
     # allnoconfig leaves the default channel strings empty, so UML logs
     # a setup failure for each of the 16 consoles and 64 serial lines it
     # cannot bring up.  con0 is the console we read on the host's stdout;
@@ -342,6 +368,10 @@ in
     {
       name = "um-report-cpu-mhz";
       patch = ./0002-um-report-cpu-mhz.patch;
+    }
+    {
+      name = "um-iomem-emulation-prompt";
+      patch = ./0003-um-iomem-emulation-prompt.patch;
     }
   ];
   kernelArch = "um";

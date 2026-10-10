@@ -1,0 +1,24 @@
+diff --git a/arch/um/Kconfig b/arch/um/Kconfig
+--- a/arch/um/Kconfig
++++ b/arch/um/Kconfig
+@@ -52,11 +52,19 @@ config NO_IOMEM
+ 	bool "disable IOMEM" if EXPERT
+ 	depends on !INDIRECT_IOMEM
+ 	default y
+ 
+ config UML_IOMEM_EMULATION
+-	bool
++	bool "UML IOMEM emulation"
+ 	select INDIRECT_IOMEM
+ 	select GENERIC_PCI_IOMAP
++	help
++	  Provide indirect IO memory emulation. Upstream leaves this
++	  prompt-less; the prompt exists so config tooling that works by
++	  answering Kconfig questions (like nixpkgs' generate-config.pl,
++	  which never asks prompt-less symbols) can enable it. This
++	  selects INDIRECT_IOMEM, which in turn forces NO_IOMEM off and
++	  so unlocks the menus gated on HAS_IOMEM. The emulation itself
++	  does nothing unless a host file is mapped through it.
+ 
+ config ISA
+ 	bool
