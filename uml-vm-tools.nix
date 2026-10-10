@@ -7,9 +7,11 @@
 # child of the builder, which is why this works in a Nix build sandbox and
 # on machines without KVM.
 #
-# v1 covers `runInLinuxVM`. Its siblings (`runInLinuxImage`, `extractFs`,
-# `extractMTDfs`, `fillDiskWithRPMs`, `fillDiskWithDebs`, `buildRPM`) follow
-# the same host/guest split and come next; each names what it needs below.
+# So far `runInLinuxVM`, `runInLinuxImage` and `extractFs`. `extractMTDfs`
+# needs the MTD subsystem, which the guest kernel leaves out (`CONFIG_MTD`
+# is unset in its built config); `fillDiskWithRPMs`, `fillDiskWithDebs`
+# and `buildRPM` are distro tooling over the same host/guest split and
+# come next.
 { pkgs
 , lib ? pkgs.lib
 , storeDir ? builtins.storeDir
@@ -41,15 +43,18 @@ let
 
     What differs, and why:
 
-    - No stage 1, no initrd, no `switch_root`. The guest root is a host
-      directory booted straight over hostfs (`rootfstype=hostfs`), so one
-      script does what the initrd plus stage 2 did. Nothing is copied.
+    - No stage 1, no initrd. The guest root is a host directory booted
+      straight over hostfs (`rootfstype=hostfs`), so one script does what
+      the initrd plus stage 2 did. `runInLinuxImage` is the exception:
+      it mounts its image at `/fs` and enters it with `chroot`, as
+      nixpkgs' stage 1 enters its root (see the branch in the script).
     - `virtiofs` mounts become `hostfs` mounts: the host store read-write
       at its own path (outputs land in the host store directly, as with
       virtiofs `shared-dir`), the build directory at `/tmp/xchg`.
-    - No modprobe setup. The UML kernel carries its config built in, and
-      `runInLinuxVM` payloads load no modules. (`extractFs` needs `loop`,
-      so its port carries that instead.)
+    - No modprobe setup. The UML kernel carries its config built in
+      (`CONFIG_BLK_DEV_LOOP` and `CONFIG_EXT4_FS` are `=y` in its built
+      config), and `runInLinuxVM` payloads load no modules. `extractFs`
+      mounts loop images with no setup lines at all for the same reason.
     - No debug shell. nixpkgs drops to an interactive shell when an
       image runs a second time, but every build here boots a fresh root,
       so that branch is unreachable; `-K` keeps `run-uml`, `console.log`
@@ -62,31 +67,103 @@ let
     set -euo pipefail
     export PATH=/bin
 
-    mount -t proc none /proc
-    mount -t sysfs none /sys
-    mount -t devtmpfs devtmpfs /dev
-    ln -s /proc/self/fd /dev/fd
-    ln -s /proc/self/fd/0 /dev/stdin
-    ln -s /proc/self/fd/1 /dev/stdout
-    ln -s /proc/self/fd/2 /dev/stderr
+    # After `chroot` below, the working directory lies outside the new
+    # root, so anchor it before anything looks anything up. Plain boots
+    # never set the sentinel and skip this.
+    if test -e /.uml-in-image; then cd /; fi
 
-    mkdir -p ${storeDir}
-    mount -t hostfs none ${storeDir} -o "$UML_STORE"
-    mkdir -p /tmp /run
-    mount -t tmpfs -o "mode=1777" none /tmp
-    mkdir -p /tmp/xchg
-    mount -t hostfs none /tmp/xchg -o "$UML_XCHG"
+    if test -e /.uml-in-image; then
+      # Second entry, after `chroot` moved under `/fs`: every mount below
+      # travelled with it, so there is nothing to do.
+      :
+    else
+      mount -t proc none /proc
+      mount -t sysfs none /sys
+      mount -t devtmpfs devtmpfs /dev
+      ln -s /proc/self/fd /dev/fd
+      ln -s /proc/self/fd/0 /dev/stdin
+      ln -s /proc/self/fd/1 /dev/stdout
+      ln -s /proc/self/fd/2 /dev/stderr
 
-    # Userspace output written to the guest console never reaches the
-    # host in a sandbox (measured: kernel messages do, PID 1's own do
-    # not), so from here stage 2 logs to a file the builder replays.
-    exec >>/tmp/xchg/stage2.log 2>&1
-    echo "guest store and exchange directory mounted"
+      # `/etc` arrives pre-created from the host (the hostfs root mounts
+      # read-only): belt and braces for the plain root. Not after
+      # `chroot`: there `/bin` is the image's, which need not have `mkdir`.
+      mkdir -p /etc
 
-    # `/etc` and the mount points below already exist: the hostfs root
-    # mounts read-only, so the host pre-creates them (see `umlRunCommand`).
-    # Only /dev (devtmpfs) takes new entries here.
-    mkdir -p /etc
+      mkdir -p ${storeDir}
+      mount -t hostfs none ${storeDir} -o "$UML_STORE"
+      mkdir -p /tmp /run
+      mount -t tmpfs -o "mode=1777" none /tmp
+      mkdir -p /tmp/xchg
+      mount -t hostfs none /tmp/xchg -o "$UML_XCHG"
+
+      # Userspace output written to the guest console never reaches the
+      # host in a sandbox (measured: kernel messages do, PID 1's own do
+      # not), so from here stage 2 logs to a file the builder replays.
+      # Before the image branch on purpose: a failure in there must land
+      # in the log too, and after `chroot` the same path resolves
+      # through the bind below, so the log continues in one file.
+      exec >>/tmp/xchg/stage2.log 2>&1
+      echo "guest store and exchange directory mounted"
+
+      # `runInLinuxImage`: the image on `/dev/ubda` becomes the guest
+      # root, mirroring nixpkgs' stage 1 (`default.nix:157`) with hostfs
+      # where it mounts virtiofs. `/fs` arrives pre-created from the
+      # host, as the other mount points do.
+      if [ -n "''${UML_IMAGE-}" ]; then
+        mount /dev/ubda /fs
+        echo "image mounted at /fs"
+
+        mkdir -p /fs/dev
+        mount -o bind /dev /fs/dev
+
+        mkdir -p /fs/dev/shm /fs/dev/pts
+        mount -t tmpfs -o "mode=1777" none /fs/dev/shm
+        mount -t devpts none /fs/dev/pts
+
+        mkdir -p /fs${storeDir}
+        mount -t hostfs none /fs${storeDir} -o "$UML_STORE"
+
+        mkdir -p /fs/tmp /fs/run /fs/var
+        mount -t tmpfs -o "mode=1777" none /fs/tmp
+        mount -t tmpfs -o "mode=755" none /fs/run
+        ln -sfn /run /fs/var/run
+
+        mkdir -p /fs/tmp/xchg
+        mount -o bind /tmp/xchg /fs/tmp/xchg
+
+        mkdir -p /fs/proc
+        mount -t proc none /fs/proc
+
+        mkdir -p /fs/sys
+        mount -t sysfs none /fs/sys
+
+        mkdir -p /fs/etc
+        ln -sf /proc/mounts /fs/etc/mtab
+        echo "127.0.0.1 localhost" > /fs/etc/hosts
+        if [ ! -e /fs/etc/passwd ]; then
+          echo "root:x:0:0:System administrator:/root:/bin/sh" > /fs/etc/passwd
+        fi
+
+        # Enter through the store bash: after the entry `/bin/sh` is
+        # the image's shell, which a bare image need not have, while the
+        # mounted store keeps this path valid. The environment
+        # (`UML_STORE`, `UML_XCHG`, `UML_IMAGE`) crosses `chroot`, and
+        # the sentinel keeps the second entry from entering again.
+        #
+        # `chroot`, not `switch_root`: busybox `switch_root` is the wrong
+        # tool here by its own design -- before its `rm -rf /` it demands
+        # `/init` exist and `/` be ramfs/tmpfs (measured: it dies with
+        # "'/init' is not a regular file"), while this root is hostfs
+        # with `/stage2`. There is also nothing to free with a move:
+        # the hostfs root costs the guest no RAM, so leaving it pinned
+        # behind the image for the build's lifetime is free.
+        touch /fs/.uml-in-image
+        cp /stage2 /fs/stage2
+        echo "entering image root at /fs"
+        exec chroot /fs ${staticBash}/bin/bash /stage2
+      fi
+    fi
 
     source /tmp/xchg/saved-env
     if [ -f /tmp/xchg/.attrs.sh ]; then
@@ -127,7 +204,7 @@ let
     command line. `QEMU_OPTS` is accepted so callers that set it still
     evaluate, but the kernel ignores it -- acceleration flags have no
     target here. `diskImage`, when set, appears as `/dev/ubda` without
-    being mounted; the `mountDisk` plus `switch_root` semantics belong to
+    being mounted; the `mountDisk` plus image-root semantics belong to
     the `runInLinuxImage` port.
   */
   umlRunCommand =
@@ -151,7 +228,7 @@ let
       guestRoot=$NIX_BUILD_TOP/uml-root
       ${coreutils}/bin/mkdir -p $guestRoot/bin
       ${coreutils}/bin/cp -p ${staticBusybox}/bin/busybox $guestRoot/bin/busybox
-      for applet in mount mkdir ln cat echo ls poweroff; do
+      for applet in mount mkdir ln cat echo ls poweroff cp chroot touch; do
         ${coreutils}/bin/ln -s busybox "$guestRoot/bin/$applet"
       done
       ${coreutils}/bin/cp ${staticBash}/bin/bash "$guestRoot/bin/bash"
@@ -168,6 +245,9 @@ let
       ${coreutils}/bin/mkdir -p $guestRoot/etc $guestRoot/tmp $guestRoot/run
       ${coreutils}/bin/mkdir -p $guestRoot/dev $guestRoot/proc $guestRoot/sys
       ${coreutils}/bin/mkdir -p $guestRoot/mnt
+      # Only the image branch mounts here: `runInLinuxImage`'s image
+      # becomes the guest root at `/fs` (see the branch in stage 2).
+      ${coreutils}/bin/mkdir -p $guestRoot/fs
       ${coreutils}/bin/mkdir -p "$guestRoot${storeDir}"
       echo "127.0.0.1 localhost" > $guestRoot/etc/hosts
       echo "root:x:0:0:System administrator:/root:/bin/sh" > $guestRoot/etc/passwd
@@ -186,9 +266,20 @@ let
       # Written to a file so a failed build keeps it for debugging.
       # Everything with a `$` below expands when this script runs, so
       # `run-uml` carries baked absolute paths.
+      # `runInLinuxImage` sets `mountDisk=true` on its derivation (as in
+      # nixpkgs); only a true value takes the image branch in stage 2.
+      # Nix stringifies boolean `true` to `1` in the builder environment,
+      # so both spellings count. Anything else -- unset, false, a QEMU
+      # device path -- boots the plain root. Like the two host paths,
+      # the flag travels as kernel-environment.
+      umlImageFlag=
+      case "''${mountDisk-}" in
+        1|true) umlImageFlag="UML_IMAGE=1" ;;
+      esac
+
       ${coreutils}/bin/cat > ./run-uml <<EOF
       #! ${bash}/bin/sh
-      ${umlKernel}/linux UML_STORE=${storeDir} UML_XCHG=$PWD/xchg rootfstype=hostfs rootflags=$PWD/uml-root init=/stage2 mem=''${memSize:-512}M panic=1 uml_dir=$PWD/uml-dir umid=uml ''${diskImage:+ubd0=$diskImage} $UML_OPTS
+      ${umlKernel}/linux UML_STORE=${storeDir} UML_XCHG=$PWD/xchg $umlImageFlag rootfstype=hostfs rootflags=$PWD/uml-root init=/stage2 mem=''${memSize:-512}M panic=1 uml_dir=$PWD/uml-dir umid=uml ''${diskImage:+ubd0=$diskImage} $UML_OPTS
       EOF
 
       ${coreutils}/bin/chmod +x ./run-uml
@@ -251,7 +342,7 @@ let
     '';
 
 in
-{
+rec {
   inherit umlKernel createEmptyImage;
 
   /*
@@ -285,6 +376,80 @@ in
         origArgs = args;
         origBuilder = builder;
         __structuredAttrs = true;
+      }
+    );
+
+  /*
+    Drop-in for `vmTools.runInLinuxImage`
+    (`pkgs/build-support/vm/default.nix:493`): the derivation's
+    `diskImage` becomes the guest root, while the payload still runs
+    through the normal stage 2, with `PATH` and `SHELL` set to the
+    image's native paths at the end. `postHook`, `origPostHook` and
+    `fixupPhase` are nixpkgs' lines verbatim.
+
+    What differs, and why:
+
+    - `preVM` makes a writable raw copy (`qemu-img convert`) instead of
+      a qcow2 copy-on-write overlay: UML reads block devices, not image
+      formats. A directory `diskImage` still resolves to its
+      `disk-image.qcow2`, as there. `diskImageFormat` defaults to `raw`
+      when the caller sets none; nixpkgs requires it.
+    - Only `mountDisk=true` (the default) takes the image branch: the
+      builder environment carries it as `1`, which `umlRunCommand`
+      turns into `UML_IMAGE=1`. QEMU device paths have no meaning here:
+      the image is always `/dev/ubda`.
+    - Setting `preVM` clobbers a caller-provided one, as in nixpkgs.
+  */
+  runInLinuxImage =
+    drv:
+    runInLinuxVM (
+      lib.overrideDerivation drv (attrs: {
+        mountDisk = attrs.mountDisk or true;
+
+        preVM = ''
+          diskImage=$(pwd)/disk-image.raw
+          origImage=${attrs.diskImage}
+          if test -d "$origImage"; then origImage="$origImage/disk-image.qcow2"; fi
+          ${pkgs.buildPackages.qemu_kvm}/bin/qemu-img convert -f "${attrs.diskImageFormat or "raw"}" -O raw "$origImage" $diskImage
+        '';
+
+        postHook = ''
+          PATH=/usr/bin:/bin:/usr/sbin:/sbin
+          SHELL=/bin/sh
+          eval "$origPostHook"
+        '';
+
+        origPostHook = lib.optionalString (attrs ? postHook) attrs.postHook;
+
+        # Don't run Nix-specific build steps like patchelf.
+        fixupPhase = "true";
+      })
+    );
+
+  /*
+    Drop-in for `vmTools.extractFs`
+    (`pkgs/build-support/vm/default.nix:425`): loop-mount the file
+    read-only inside the guest and copy its tree to `$out`. The
+    `modprobe` and `/lib` lines are gone: `loop` and `ext4` are built
+    into the guest kernel, so there is nothing to load. Images needing
+    a driver the kernel leaves out stay QEMU's job.
+  */
+  extractFs =
+    {
+      file,
+      fs ? null,
+    }:
+    runInLinuxVM (
+      stdenv.mkDerivation {
+        name = "extract-file";
+        buildInputs = [ pkgs.util-linux ];
+        buildCommand = ''
+          mkdir -p $out
+          mkdir -p tmp
+          mount -o loop,ro,ufstype=44bsd ${lib.optionalString (fs != null) "-t ${fs} "}${file} tmp ||
+            mount -o loop,ro ${lib.optionalString (fs != null) "-t ${fs} "}${file} tmp
+          cp -Rv tmp/* $out/ || exit 0
+        '';
       }
     );
 }
