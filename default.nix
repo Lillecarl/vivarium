@@ -1836,6 +1836,69 @@ let
           + "touch $out"
         );
 
+    # Do the UML guest primitives behave like vmTools.runInLinuxVM,
+    # minus KVM? One guest per case, each asserting its own output on
+    # the host below. Slow (five boots), but the alternative is finding
+    # out from a red disk image.
+    check-uml-vm-tools =
+      let
+        umlRun = umlVmTools.runInLinuxVM;
+        guests = {
+          trivial = umlRun (
+            pkgs.runCommand "uml-check-trivial" { } ''echo ok > $out''
+          );
+          structured = umlRun (
+            pkgs.runCommand "uml-check-structured" {
+              __structuredAttrs = true;
+              QEMU_OPTS = "-smp 4";
+            } ''echo ok > $out''
+          );
+          hooks = umlRun (
+            pkgs.runCommand "uml-check-hooks" {
+              preVM = ''mkdir -p $out && echo pre > $out/order'';
+              postVM = ''echo post >> $out/order'';
+            } ''echo payload >> $out/order && echo ok > $out/ok''
+          );
+          memory = umlRun (
+            pkgs.runCommand "uml-check-memory" { memSize = 2048; } ''
+              total=$(awk '/^MemTotal:/ { print $2 }' /proc/meminfo)
+              if [ "$total" -gt 1500000 ]; then echo ok > $out; else exit 1; fi
+            ''
+          );
+          disk = umlRun (
+            pkgs.runCommand "uml-check-disk" {
+              preVM =
+                umlVmTools.createEmptyImage {
+                  size = 64;
+                  fullName = "uml-check-disk";
+                }
+                + ''
+                  ${pkgs.qemu_kvm}/bin/qemu-img convert -O raw $diskImage $out/disk-image.raw
+                  diskImage=$out/disk-image.raw
+                '';
+            } ''test -b /dev/ubda && echo ok > $out/ok''
+          );
+        };
+        withoutKvm = lib.all (
+          guest: !(builtins.elem "kvm" (guest.drvAttrs.requiredSystemFeatures or [ ]))
+        ) (lib.attrValues guests);
+        qemuStillNeedsKvm =
+          (pkgs.vmTools.runInLinuxVM pkgs.hello).drvAttrs.requiredSystemFeatures == [ "kvm" ];
+      in
+      assert withoutKvm;
+      assert qemuStillNeedsKvm;
+      pkgs.runCommand "uml-vm-tools-check" { } ''
+        test "$(cat ${guests.trivial})" = ok
+        test "$(cat ${guests.structured})" = ok
+        test "$(cat ${guests.memory})" = ok
+        test "$(cat ${guests.disk}/ok)" = ok
+        test "$(cat ${guests.disk}/nix-support/full-name)" = uml-check-disk
+        test -e ${guests.disk}/disk-image.qcow2
+        test "$(cat ${guests.hooks}/order)" = "$(printf 'pre\npayload\npost')"
+        test "$(cat ${guests.hooks}/ok)" = ok
+        touch $out
+      '';
+
     check-workflows = ci.check ./.github/workflows;
 
     # The scripts in tests/, against the library they drive. Also the

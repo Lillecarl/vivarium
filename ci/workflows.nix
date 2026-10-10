@@ -311,6 +311,29 @@ let
       })
     ];
   };
+  /*
+    The vmTools-compatible guest primitives, without KVM.
+
+    One UML guest per case in `check-uml-vm-tools`, each asserting its
+    own output: the primitive behaves like runInLinuxVM, so the ports
+    above it only override inputs. Needs no `kernel` job: this kernel
+    comes from the package set rather than the guest, so it builds here
+    and the cache keeps it. The first run pays that build; after it the
+    five boots cost minutes.
+  */
+  umlVmToolsJob = job {
+    id = "uml-vm-tools";
+    timeoutMinutes = 90;
+    cond = selectable "uml-vm-tools";
+    ghanix = sandboxBootstrap;
+    steps = [
+      (steps.build {
+        name = "Build derivations inside UML guests: trivial, structured, hooks, memory, disk";
+        attrs = [ "check-uml-vm-tools" ];
+        timeoutMinutes = 60;
+      })
+    ];
+  };
 in
 {
   # Through ghanix's schema rather than straight to YAML. That is what
@@ -339,6 +362,7 @@ in
       kernel = kernelJob;
       test-k8s-pull = pullJob;
       test-container = containerJob;
+      uml-vm-tools = umlVmToolsJob;
     }
     // testJobs;
   };
