@@ -12,7 +12,8 @@
 # `fillDiskWithDebs`, `buildRPM`, `createEmptyImage`,
 # `rpmClosureGenerator`, `debClosureGenerator`,
 # `makeImageFromRPMDist`, `makeImageFromDebDist`, `diskImageFuns`,
-# `diskImageExtraFuns`, `diskImages` and `hd`, named in `names` below
+# `diskImageExtraFuns`, `diskImages`, `makeImageTestScript`,
+# `vmRunCommand` and `hd`, named in `names` below
 # so the overlay (`lib.nix`) cannot drift from this set. The makers
 # have to be ported too, not just the primitives: nixpkgs composes
 # them from its siblings inside its own `rec`, so an overlay that
@@ -26,8 +27,11 @@
 # `makeDebShim`): images and packages assembled from the store for
 # callers with no distro, e.g. `buildRPM` over a symlinked compiler.
 # Left out on purpose:
-# `makeImageTestScript` generates a QEMU command for interactive use,
-# and a kept `run-uml` already covers that need.
+# Left out because UML has no counterpart, not from neglect: `qemu`
+# and `qemuCommandLinux` are QEMU itself; `initrd`, `initrdUtils`,
+# `modulesClosure`, `stage1Init` and `stage2Init` build and boot a
+# QEMU initrd, while the guest here boots its host directory straight
+# over hostfs with no initrd at all.
 { pkgs
 , lib ? pkgs.lib
 , storeDir ? builtins.storeDir
@@ -575,8 +579,20 @@ rec {
     "diskImageFuns"
     "diskImageExtraFuns"
     "diskImages"
+    "makeImageTestScript"
+    "vmRunCommand"
     "hd"
   ];
+
+  /*
+    Drop-in for `vmTools.vmRunCommand`
+    (`pkgs/build-support/vm/default.nix:284`): the host half every
+    guest boots through, documented where it is defined above. An
+    alias, so callers reaching past `runInLinuxVM` to the runner
+    itself stay on UML through the overlay instead of silently
+    falling back to QEMU.
+  */
+  vmRunCommand = umlRunCommand;
 
   /*
     Drop-in for `vmTools.runInLinuxVM`
@@ -1269,4 +1285,37 @@ rec {
   ) diskImageFuns;
 
   diskImages = lib.mapAttrs (name: f: f { }) diskImageFuns;
+
+  /*
+    Drop-in for `vmTools.makeImageTestScript`
+    (`pkgs/build-support/vm/default.nix:622`): build a script that
+    boots `image` for inspection by hand. nixpkgs' script makes a
+    qcow2 copy-on-write overlay and boots QEMU with the distro's own
+    init; this one copies the raw image aside (preferring the raw
+    beside the qcow2, converting when only the qcow2 is there -- UML
+    reads block devices, not image formats) and boots the UML kernel
+    with `/bin/sh` as init, since there is no systemd here to parent
+    a distro boot. The copy keeps the store image pristine, as the
+    overlay does. Usage: `image-test [writable-copy]`, memory via
+    `UML_MEMSIZE` (MiB, default 1024).
+  */
+  makeImageTestScript =
+    image:
+    pkgs.writeScript "image-test" ''
+      #! ${bash}/bin/sh
+      if test -z "$1"; then
+        echo "Syntax: $0 <writable-copy>"
+        exit 1
+      fi
+      diskImage="$1"
+      if ! test -e "$diskImage"; then
+        if test -f ${image}/disk-image.raw; then
+          cp --sparse=always ${image}/disk-image.raw "$diskImage"
+        else
+          ${pkgs.buildPackages.qemu_kvm}/bin/qemu-img convert -f qcow2 -O raw ${image}/disk-image.qcow2 "$diskImage"
+        fi
+      fi
+      chmod +w "$diskImage"
+      exec ${umlKernel}/linux root=/dev/ubda rw init=/bin/sh mem=''${UML_MEMSIZE:-1024}M panic=1 umid=uml-image-test-$$ ubd0="$diskImage"
+    '';
 }

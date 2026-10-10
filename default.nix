@@ -2211,6 +2211,9 @@ let
             postInstall = ":";
           };
           extractDebScripts = umlVmTools.extractFs { file = "${guests.fillDebScripts}/disk-image.raw"; };
+          # The interactive boot script for an image: host-side text,
+          # so the check asserts its shape rather than booting it.
+          testScript = umlVmTools.makeImageTestScript guests.fillRpm;
         };
         withoutKvm = lib.all (
           guest: !(builtins.elem "kvm" (guest.drvAttrs.requiredSystemFeatures or [ ]))
@@ -2246,6 +2249,10 @@ let
         test "$(cat ${guests.extractDebScripts}/usr/share/uml-notes/state)" = configured
         test "$(cat ${guests.extractDebScripts}/usr/share/uml-notes/payload)" = notes-payload
         test "$(cat ${guests.fillDebScripts}/nix-support/full-name)" = uml-check-fill-deb-scripts
+        test "$(head -n 1 ${guests.testScript})" = "#! ${pkgs.bash}/bin/sh"
+        grep -q 'init=/bin/sh' ${guests.testScript}
+        grep -q 'ubd0="$diskImage"' ${guests.testScript}
+        grep -q 'disk-image.raw' ${guests.testScript}
         touch $out
       '';
 
