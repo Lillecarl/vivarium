@@ -50,9 +50,10 @@ let
     - No modprobe setup. The UML kernel carries its config built in, and
       `runInLinuxVM` payloads load no modules. (`extractFs` needs `loop`,
       so its port carries that instead.)
-    - No debug shell. nixpkgs drops to an interactive shell when the image
-      runs twice; here every run executes the payload, and `-K` keeps
-      `run-uml` for inspection by hand.
+    - No debug shell. nixpkgs drops to an interactive shell when an
+      image runs a second time, but every build here boots a fresh root,
+      so that branch is unreachable; `-K` keeps `run-uml`, `console.log`
+      and `stage2.log` for inspection by hand instead.
     - No `lo` interface. The QEMU guest brings one up, but the payload
       runs offline either way; nothing in the protocol needs it.
   */
@@ -159,9 +160,14 @@ let
       ${coreutils}/bin/chmod +x $guestRoot/stage2
 
       # The hostfs root mounts read-only, so stage 2 creates nothing in
-      # it: mount points and /etc arrive from here instead.
+      # it: mount points and /etc arrive from here instead. `/mnt` is
+      # where disk-building payloads mount their target, as under QEMU's
+      # writable tmpfs root; an overlay over `/` itself is refused by the
+      # kernel (measured), so anything else written outside the mounted
+      # trees stays a divergence.
       ${coreutils}/bin/mkdir -p $guestRoot/etc $guestRoot/tmp $guestRoot/run
       ${coreutils}/bin/mkdir -p $guestRoot/dev $guestRoot/proc $guestRoot/sys
+      ${coreutils}/bin/mkdir -p $guestRoot/mnt
       ${coreutils}/bin/mkdir -p "$guestRoot${storeDir}"
       echo "127.0.0.1 localhost" > $guestRoot/etc/hosts
       echo "root:x:0:0:System administrator:/root:/bin/sh" > $guestRoot/etc/passwd
@@ -217,9 +223,36 @@ let
       eval "$postVM"
     '';
 
+  /*
+    A bash fragment that produces a disk image at `destination`, for
+    `preVM`. Host-only -- `qemu-img` runs on the builder -- so this is
+    nixpkgs' `createEmptyImage`
+    (`pkgs/build-support/vm/default.nix:347`) with only the tool path
+    retargeted, byte for byte otherwise. The image is qcow2, as there;
+    convert to raw before attaching it: UML reads block devices, not
+    image formats (wiring that conversion is `runInLinuxImage`'s job).
+  */
+  createEmptyImage =
+    {
+      # Disk image size in MiB (1024*1024 bytes)
+      size,
+      # Name that will be written to ${destination}/nix-support/full-name
+      fullName,
+      # Where to write the image files, defaulting to $out
+      destination ? "$out",
+    }:
+    ''
+      mkdir -p ${destination}
+      diskImage=${destination}/disk-image.qcow2
+      ${pkgs.buildPackages.qemu_kvm}/bin/qemu-img create -f qcow2 $diskImage "${toString size}M"
+
+      mkdir ${destination}/nix-support
+      echo "${fullName}" > ${destination}/nix-support/full-name
+    '';
+
 in
 {
-  inherit umlKernel;
+  inherit umlKernel createEmptyImage;
 
   /*
     Drop-in for `vmTools.runInLinuxVM`
@@ -228,6 +261,9 @@ in
     `args`, `preVM`, `postVM`, `diskImage` all behave as documented there,
     except `QEMU_OPTS` is ignored (see `umlRunCommand`) and there is
     deliberately no `requiredSystemFeatures`: nothing here needs KVM.
+    The guest is uniprocessor -- the UML kernel builds without SMP, which
+    only costs boot time -- so `NIX_BUILD_CORES` and `-smp` in `QEMU_OPTS`
+    have no effect.
   */
   runInLinuxVM =
     drv:

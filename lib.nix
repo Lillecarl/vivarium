@@ -57,7 +57,7 @@ rec {
   overlays = {
     uml-vm-tools = final: prev: {
       vmTools = prev.vmTools // {
-        inherit (umlVmTools) runInLinuxVM;
+        inherit (umlVmTools) runInLinuxVM createEmptyImage;
       };
     };
   };
