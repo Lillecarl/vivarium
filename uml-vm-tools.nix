@@ -379,9 +379,11 @@ let
     symlinks: a static busybox for `/bin/sh`, every `bin/*` of each
     package in `tools` linked into `/usr/bin`, and the loader, laid
     with `mkfs.ext4 -d` (no mounting). Nix binaries carry their
-    RUNPATH, so the links run wherever the image boots. `setup` is a
-    shell fragment populating `root/` further, e.g. a package
-    database; `buildInputs` covers what it runs.
+    RUNPATH, so the links run wherever the image boots. On colliding
+    names the first package wins (the compiler wrapper and binutils
+    share names); `setup` is a shell fragment populating `root/`
+    further, e.g. a package database; `buildInputs` covers what it
+    runs.
   */
   makeStoreImage =
     {
@@ -403,7 +405,9 @@ let
         ln -s ${pkgs.pkgsStatic.busybox}/bin/busybox root/bin/busybox
         ln -s busybox root/bin/sh
         for p in ${toString tools}; do
-          for b in $p/bin/*; do ln -s "$b" root/usr/bin/; done
+          for b in $p/bin/*; do
+            [ -e "root/usr/bin/$(basename "$b")" ] || ln -s "$b" root/usr/bin/
+          done
         done
         ln -s ${pkgs.glibc}/lib/ld-linux-x86-64.so.2 root/lib64/ld-linux-x86-64.so.2
         ${setup}
@@ -470,8 +474,9 @@ let
     The `.deb` a bare image needs before `fillDiskWithDebs` can
     install into it: store-backed `dpkg` (with the loader) for the
     chrooted `--install`, the `start-stop-daemon` the install dance
-    moves aside, and the skeleton a distro's base files would lay
-    (the port's DB setup only touches these, never creates them).
+    moves aside, a `/bin/sh` (static busybox) plus a base tool set for
+    maintainer scripts, and the skeleton a distro's base files would
+    lay (the port's DB setup only touches these, never creates them).
     Install it first in every component: it is never a distro, so it
     stays check and bootstrap scaffolding rather than a payload.
   */
@@ -484,7 +489,14 @@ let
       inherit name version;
       description = "store shims for bare images";
       files = ''
-        mkdir -p pkg/usr/bin pkg/sbin pkg/lib64 pkg/etc pkg/var/lib/dpkg
+        mkdir -p pkg/bin pkg/usr/bin pkg/sbin pkg/lib64 pkg/etc pkg/var/lib/dpkg
+        ln -s ${pkgs.pkgsStatic.busybox}/bin/busybox pkg/bin/busybox
+        ln -s busybox pkg/bin/sh
+        for p in ${pkgs.coreutils} ${pkgs.findutils} ${pkgs.gnugrep} ${pkgs.gnused} ${pkgs.gawk}; do
+          for b in $p/bin/*; do
+            [ -e "pkg/bin/$(basename "$b")" ] || ln -s "$b" pkg/bin/
+          done
+        done
         ln -s ${pkgs.dpkg}/bin/dpkg pkg/usr/bin/dpkg
         ln -s ${pkgs.glibc}/lib/ld-linux-x86-64.so.2 pkg/lib64/ld-linux-x86-64.so.2
         echo '#!/bin/true' > pkg/sbin/start-stop-daemon
@@ -498,9 +510,13 @@ let
     `/mnt`, for the disk-filling ports. nixpkgs'
     `defaultCreateRootFS` (`pkgs/build-support/vm/default.nix:365`)
     with the device retargeted: `/dev/ubda`, the only disk UML
-    attaches, for QEMU's `/dev/${hd}`. One required `-p`: `/mnt`
+    attaches, for QEMU's `/dev/${hd}`. Two required changes: `/mnt`
     arrives pre-created from the host (the hostfs root mounts
-    read-only), where QEMU's fresh tmpfs root never has it.
+    read-only), where QEMU's fresh tmpfs root never has it, and
+    `/mnt/tmp` is laid too, for the `/tmp` bind the fill ports do
+    next -- on a distro the filesystem package owns it, on a bare
+    image nothing does (measured: the bind fails and the guest
+    panics).
   */
   defaultCreateRootFS = ''
     mkdir -p /mnt
@@ -512,7 +528,7 @@ let
     fi
     touch /mnt/.debug
 
-    mkdir /mnt/proc /mnt/dev /mnt/sys
+    mkdir /mnt/proc /mnt/dev /mnt/sys /mnt/tmp
   '';
 
 in
@@ -788,10 +804,15 @@ rec {
     (`pkgs/build-support/vm/default.nix:724`): format the image with
     `createRootFS`, unpack the Debs under `/mnt`, and install them
     through a chroot, component by component. The `buildCommand` is
-    nixpkgs' line for line, with only the tool paths retargeted;
-    `preVM` makes a writable raw image, as above. `debs` keeps its
-    grouped shape (list of lists); `...` absorbs the rest into the
-    derivation, as there.
+    nixpkgs' line for line, with only the tool paths retargeted, plus
+    one bind: the store at its canonical path under `/mnt`, as
+    `fillDiskWithRPMs` already binds. On a distro the image carries
+    its own toolchain and the extra bind is inert; on a bare image
+    the symlinked tools (the shim's dpkg above all) dangle without
+    it (measured: the chrooted install dies silently behind
+    `|| true`). `preVM` makes a writable raw image, as above. `debs`
+    keeps its grouped shape (list of lists); `...` absorbs the rest
+    into the derivation, as there.
   */
   fillDiskWithDebs =
     {
@@ -846,6 +867,11 @@ rec {
             ${pkgs.util-linux}/bin/mount -o bind ${storeDir} /mnt/inst${storeDir}
             ${pkgs.util-linux}/bin/mount -o bind /proc /mnt/proc
             ${pkgs.util-linux}/bin/mount -o bind /dev /mnt/dev
+            # And at its canonical path: bare images carry the install
+            # toolchain as store symlinks, which dangle in the chroot
+            # without this (see above).
+            mkdir -p /mnt${storeDir}
+            ${pkgs.util-linux}/bin/mount -o bind ${storeDir} /mnt${storeDir}
 
             # Misc. files/directories assumed by various packages.
             echo "initialising Dpkg DB..."
@@ -888,6 +914,7 @@ rec {
             rm /mnt/.debug
 
             ${pkgs.util-linux}/bin/umount /mnt/inst${storeDir}
+            ${pkgs.util-linux}/bin/umount /mnt${storeDir}
             ${pkgs.util-linux}/bin/umount /mnt/proc
             ${pkgs.util-linux}/bin/umount /mnt/dev
             ${pkgs.util-linux}/bin/umount /mnt
