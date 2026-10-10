@@ -39,6 +39,29 @@ rec {
   */
   images = import ./images.nix { inherit (pkgs) fetchurl; };
 
+  /**
+    Build-time guest primitives backed by User-Mode Linux, with the same
+    call shapes as `pkgs.vmTools` (`runInLinuxVM` today, its siblings to
+    follow). No `/dev/kvm`, no `kvm` feature: the guest is a process, so
+    these build in a sandbox and on machines without KVM. See
+    `uml-vm-tools.nix`.
+  */
+  umlVmTools = import ./uml-vm-tools.nix { inherit pkgs lib; };
+
+  /*
+    Overlay form of the same set, so a caller swaps one attribute and
+    changes no call site:
+
+        pkgs.extend vivarium.overlays.uml-vm-tools
+  */
+  overlays = {
+    uml-vm-tools = final: prev: {
+      vmTools = prev.vmTools // {
+        inherit (umlVmTools) runInLinuxVM;
+      };
+    };
+  };
+
   /*
     pyright over a caller's test scripts, against this library.
 

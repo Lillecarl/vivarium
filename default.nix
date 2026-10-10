@@ -37,6 +37,7 @@ let
     session
     typeCheck
     images
+    umlVmTools
     ;
 
   # Two guests on one segment, addressed statically.
@@ -1856,8 +1857,8 @@ in
 tests
 // {
   # The library, for a caller that writes its own test.
-  inherit mkNode mkTest fromNixosTest runner session typeCheck images;
-  lib = { inherit mkNode mkTest fromNixosTest runner session typeCheck images; };
+  inherit mkNode mkTest fromNixosTest runner session typeCheck images umlVmTools;
+  lib = { inherit mkNode mkTest fromNixosTest runner session typeCheck images umlVmTools; inherit (vivarium) overlays; };
 
   inherit demo store k8s-pull uplink incr;
   inherit (demo.config.system.build) vivariumRunner vivariumRootImage toplevel;
