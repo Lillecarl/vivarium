@@ -9,7 +9,10 @@
 #
 # Covered: `runInLinuxVM`, `runInLinuxImage`, `extractFs`,
 # `extractMTDfs`, `defaultCreateRootFS`, `fillDiskWithRPMs`,
-# `fillDiskWithDebs` and `buildRPM`. Left out on purpose:
+# `fillDiskWithDebs`, `buildRPM` and `createEmptyImage`, named in
+# `names` below so the overlay (`lib.nix`) cannot drift from this set.
+# Ours on top: `createEmptyRawImage`, the empty image plus the raw
+# conversion the fill ports share. Left out on purpose:
 # `makeImageTestScript` generates a QEMU command for interactive use,
 # and a kept `run-uml` already covers that need; the distro pipelines
 # (`makeImageFromRPMDist`, `makeImageFromDebDist`, `diskImages`) and
@@ -70,19 +73,27 @@ let
     set -euo pipefail
     export PATH=/bin
 
+    # One mount, creating its point first: every mount below is this,
+    # so a point is never mounted without existing. Usage reads like
+    # the mount itself: `mnt /proc -t proc none`.
+    mnt() {
+      target=$1
+      shift
+      mkdir -p "$target"
+      mount "$@" "$target"
+    }
+
     # After `chroot` below, the working directory lies outside the new
     # root, so anchor it before anything looks anything up. Plain boots
-    # never set the sentinel and skip this.
-    if test -e /.uml-in-image; then cd /; fi
-
+    # never set the sentinel and take the mounts below instead; after
+    # `chroot`, every mount travelled with the move, so there is
+    # nothing left to do.
     if test -e /.uml-in-image; then
-      # Second entry, after `chroot` moved under `/fs`: every mount below
-      # travelled with it, so there is nothing to do.
-      :
+      cd /
     else
-      mount -t proc none /proc
-      mount -t sysfs none /sys
-      mount -t devtmpfs devtmpfs /dev
+      mnt /proc -t proc none
+      mnt /sys -t sysfs none
+      mnt /dev -t devtmpfs devtmpfs
       ln -s /proc/self/fd /dev/fd
       ln -s /proc/self/fd/0 /dev/stdin
       ln -s /proc/self/fd/1 /dev/stdout
@@ -93,12 +104,10 @@ let
       # `chroot`: there `/bin` is the image's, which need not have `mkdir`.
       mkdir -p /etc
 
-      mkdir -p ${storeDir}
-      mount -t hostfs none ${storeDir} -o "$UML_STORE"
-      mkdir -p /tmp /run
-      mount -t tmpfs -o "mode=1777" none /tmp
-      mkdir -p /tmp/xchg
-      mount -t hostfs none /tmp/xchg -o "$UML_XCHG"
+      mnt ${storeDir} -t hostfs none -o "$UML_STORE"
+      mnt /tmp -t tmpfs -o "mode=1777" none
+      mkdir -p /run
+      mnt /tmp/xchg -t hostfs none -o "$UML_XCHG"
 
       # Userspace output written to the guest console never reaches the
       # host in a sandbox (measured: kernel messages do, PID 1's own do
@@ -114,32 +123,26 @@ let
       # where it mounts virtiofs. `/fs` arrives pre-created from the
       # host, as the other mount points do.
       if [ -n "''${UML_IMAGE-}" ]; then
-        mount /dev/ubda /fs
+        mnt /fs /dev/ubda
         echo "image mounted at /fs"
 
-        mkdir -p /fs/dev
-        mount -o bind /dev /fs/dev
+        mnt /fs/dev -o bind /dev
 
-        mkdir -p /fs/dev/shm /fs/dev/pts
-        mount -t tmpfs -o "mode=1777" none /fs/dev/shm
-        mount -t devpts none /fs/dev/pts
+        mnt /fs/dev/shm -t tmpfs -o "mode=1777" none
+        mnt /fs/dev/pts -t devpts none
 
-        mkdir -p /fs${storeDir}
-        mount -t hostfs none /fs${storeDir} -o "$UML_STORE"
+        mnt /fs${storeDir} -t hostfs none -o "$UML_STORE"
 
-        mkdir -p /fs/tmp /fs/run /fs/var
-        mount -t tmpfs -o "mode=1777" none /fs/tmp
-        mount -t tmpfs -o "mode=755" none /fs/run
+        mnt /fs/tmp -t tmpfs -o "mode=1777" none
+        mnt /fs/run -t tmpfs -o "mode=755" none
+        mkdir -p /fs/var
         ln -sfn /run /fs/var/run
 
-        mkdir -p /fs/tmp/xchg
-        mount -o bind /tmp/xchg /fs/tmp/xchg
+        mnt /fs/tmp/xchg -o bind /tmp/xchg
 
-        mkdir -p /fs/proc
-        mount -t proc none /fs/proc
+        mnt /fs/proc -t proc none
 
-        mkdir -p /fs/sys
-        mount -t sysfs none /fs/sys
+        mnt /fs/sys -t sysfs none
 
         mkdir -p /fs/etc
         ln -sf /proc/mounts /fs/etc/mtab
@@ -244,14 +247,11 @@ let
       # where disk-building payloads mount their target, as under QEMU's
       # writable tmpfs root; an overlay over `/` itself is refused by the
       # kernel (measured), so anything else written outside the mounted
-      # trees stays a divergence.
-      ${coreutils}/bin/mkdir -p $guestRoot/etc $guestRoot/tmp $guestRoot/run
-      ${coreutils}/bin/mkdir -p $guestRoot/dev $guestRoot/proc $guestRoot/sys
-      ${coreutils}/bin/mkdir -p $guestRoot/mnt
-      # Only the image branch mounts here: `runInLinuxImage`'s image
-      # becomes the guest root at `/fs` (see the branch in stage 2).
-      ${coreutils}/bin/mkdir -p $guestRoot/fs
-      ${coreutils}/bin/mkdir -p "$guestRoot${storeDir}"
+      # trees stays a divergence. `/fs` only the image branch mounts,
+      # as the guest root (see the branch in stage 2).
+      ${coreutils}/bin/mkdir -p $guestRoot/etc $guestRoot/tmp $guestRoot/run \
+        $guestRoot/dev $guestRoot/proc $guestRoot/sys $guestRoot/mnt \
+        $guestRoot/fs "$guestRoot${storeDir}"
       echo "127.0.0.1 localhost" > $guestRoot/etc/hosts
       echo "root:x:0:0:System administrator:/root:/bin/sh" > $guestRoot/etc/passwd
       ${coreutils}/bin/ln -sf /proc/mounts $guestRoot/etc/mtab
@@ -345,6 +345,32 @@ let
     '';
 
   /*
+    After `createEmptyImage`, `$diskImage` names qcow2: make the raw
+    copy UML boots from, for `preVM`. UML reads block devices, not
+    image formats (see `runInLinuxImage`).
+  */
+  convertToRawImage = ''
+    ${pkgs.buildPackages.qemu_kvm}/bin/qemu-img convert -O raw $diskImage $out/disk-image.raw
+    diskImage=$out/disk-image.raw
+  '';
+
+  /*
+    A writable raw image at `$out/disk-image.raw`, for derivations
+    whose output is the image: `createEmptyImage` plus the conversion
+    above. `fillDiskWithRPMs`, `fillDiskWithDebs` and the disk check
+    share it; `runInLinuxImage` keeps its own, since it converts a
+    caller-provided image rather than making one.
+  */
+  createEmptyRawImage =
+    {
+      # Disk image size in MiB (1024*1024 bytes)
+      size,
+      # Name that will be written to $out/nix-support/full-name
+      fullName,
+    }:
+    createEmptyImage { inherit size fullName; } + convertToRawImage;
+
+  /*
     A bash fragment that formats the attached image and mounts it at
     `/mnt`, for the disk-filling ports. nixpkgs'
     `defaultCreateRootFS` (`pkgs/build-support/vm/default.nix:365`)
@@ -368,7 +394,24 @@ let
 
 in
 rec {
-  inherit umlKernel createEmptyImage defaultCreateRootFS;
+  inherit umlKernel createEmptyImage createEmptyRawImage defaultCreateRootFS;
+
+  # The nixpkgs-compatible surface: exactly the `vmTools` names this
+  # set replaces. The overlay reads this list rather than naming them
+  # again, so the two cannot drift apart; `umlKernel` and
+  # `createEmptyRawImage` stay out, since nixpkgs' `vmTools` has
+  # neither.
+  names = [
+    "runInLinuxVM"
+    "runInLinuxImage"
+    "extractFs"
+    "extractMTDfs"
+    "defaultCreateRootFS"
+    "fillDiskWithRPMs"
+    "fillDiskWithDebs"
+    "buildRPM"
+    "createEmptyImage"
+  ];
 
   /*
     Drop-in for `vmTools.runInLinuxVM`
@@ -528,9 +571,9 @@ rec {
     `createRootFS`, unpack the RPMs under `/mnt`, and install them
     through a chroot. The `buildCommand` is nixpkgs' line for line,
     with only the tool paths retargeted; `createRootFS` defaults to
-    the `defaultCreateRootFS` above. `preVM` extends nixpkgs'
-    `createEmptyImage` with the raw conversion, as in `runInLinuxImage`:
-    UML reads block devices, not qcow2.
+    the `defaultCreateRootFS` above. `preVM` makes a writable raw
+    image with `createEmptyRawImage`, as in `runInLinuxImage`: UML
+    reads block devices, not qcow2.
   */
   fillDiskWithRPMs =
     {
@@ -557,12 +600,7 @@ rec {
           QEMU_OPTS
           memSize
           ;
-        preVM =
-          createEmptyImage { inherit size fullName; }
-          + ''
-            ${pkgs.buildPackages.qemu_kvm}/bin/qemu-img convert -O raw $diskImage $out/disk-image.raw
-            diskImage=$out/disk-image.raw
-          '';
+        preVM = createEmptyRawImage { inherit size fullName; };
 
         buildCommand = ''
           ${createRootFS}
@@ -627,9 +665,9 @@ rec {
     `createRootFS`, unpack the Debs under `/mnt`, and install them
     through a chroot, component by component. The `buildCommand` is
     nixpkgs' line for line, with only the tool paths retargeted;
-    `preVM` extends `createEmptyImage` with the raw conversion, as
-    above. `debs` keeps its grouped shape (list of lists); `...`
-    absorbs the rest into the derivation, as there.
+    `preVM` makes a writable raw image, as above. `debs` keeps its
+    grouped shape (list of lists); `...` absorbs the rest into the
+    derivation, as there.
   */
   fillDiskWithDebs =
     {
@@ -657,12 +695,7 @@ rec {
           debsFlat = lib.flatten debs;
           debsGrouped = map toString debs;
 
-          preVM =
-            createEmptyImage { inherit size fullName; }
-            + ''
-              ${pkgs.buildPackages.qemu_kvm}/bin/qemu-img convert -O raw $diskImage $out/disk-image.raw
-              diskImage=$out/disk-image.raw
-            '';
+          preVM = createEmptyRawImage { inherit size fullName; };
 
           buildCommand = ''
             ${createRootFS}
