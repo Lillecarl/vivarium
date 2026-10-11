@@ -2194,6 +2194,17 @@ let
           # The interactive boot script for an image: host-side text,
           # so the check asserts its shape rather than booting it.
           testScript = umlVmTools.makeImageTestScript guests.fillRpm;
+          # The guest kernel's built config: `ignoreConfigErrors` drops
+          # unknown or unmet options silently, so a kernel bump that
+          # loses one of these (the `UML_IOMEM_EMULATION` prompt patch
+          # above all) must fail here, not in a mysterious guest.
+          kernelConfig = pkgs.runCommand "uml-check-kernel-config" { } ''
+            for opt in UML_IOMEM_EMULATION MTD MTD_MTDRAM MTD_BLOCK JFFS2_FS BLK_DEV_LOOP EXT4_FS; do
+              grep -qx "CONFIG_$opt=y" ${umlVmTools.umlKernel}/config || (echo "missing: CONFIG_$opt=y" >&2; exit 1)
+            done
+            grep -qx 'CONFIG_MTDRAM_TOTAL_SIZE=131072' ${umlVmTools.umlKernel}/config || (echo "missing: CONFIG_MTDRAM_TOTAL_SIZE=131072" >&2; exit 1)
+            touch $out
+          '';
         };
         withoutKvm = lib.all (
           guest: !(builtins.elem "kvm" (guest.drvAttrs.requiredSystemFeatures or [ ]))
@@ -2233,6 +2244,7 @@ let
         grep -q 'init=/bin/sh' ${guests.testScript}
         grep -q 'ubd0="$diskImage"' ${guests.testScript}
         grep -q 'disk-image.raw' ${guests.testScript}
+        test -e ${guests.kernelConfig}
         touch $out
       '';
 
