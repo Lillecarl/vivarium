@@ -192,3 +192,52 @@ An agent that only runs shell commands does not need MCP:
 4. At a pause, copy the `exec` line from the file, change the Python,
    and run it.
 5. Run the `continue` line, then start the monitor again.
+
+## Build a distro image without KVM
+
+`vivarium.umlVmTools` is `pkgs.vmTools` backed by User-Mode Linux:
+the same call shapes, no `/dev/kvm`, no `kvm` feature. Swap it in
+with the overlay and change no call site:
+
+```nix
+pkgs.extend vivarium.overlays.uml-vm-tools
+```
+
+Then `vmTools.makeImageFromRPMDist` and friends build through UML
+guests instead of QEMU ones. This needs the network (real
+repository metadata and packages), so it is by hand, never a check:
+
+```console
+$ nix build --file image.nix --print-build-logs
+```
+
+nixpkgs ships Fedora, Rocky, Alma, Oracle, Amazon, Debian and Ubuntu
+metadata (`vmTools.rpmDistros`, `vmTools.debDistros`). It ships no
+SUSE metadata, so define the distro inline in the same shape and run
+it through the same door:
+
+```nix
+extended.vmTools.makeImageFromRPMDist {
+  name = "opensuse-leap-15.6-x86_64";
+  fullName = "openSUSE Leap 15.6 (x86_64)";
+  packagesLists = [ (pkgs.fetchurl {
+    url = "https://ftp.gwdg.de/pub/opensuse/distribution/leap/15.6/repo/oss/repodata/<hash>-primary.xml.gz";
+    hash = "sha256-...";
+  }) ];
+  urlPrefixes = [ "https://ftp.gwdg.de/pub/opensuse/distribution/leap/15.6/repo/oss" ];
+  archs = [ "noarch" "x86_64" ];
+  unifiedSystemDir = true;
+  size = 2048;
+  packages = [ "aaa_base" "bash" "filesystem" "glibc" "rpm" "shadow" "openSUSE-release" ];
+}
+```
+
+Read the hash off the repository's `repomd.xml` at the time: pin the
+`primary.xml.gz` it names, from one mirror for metadata and packages
+(the origin has served a repomd whose files 404'd mid-sync). SUSE
+needs two things other distros do not: its packages carry `sha512`
+checksums, which the vendored `rpm-closure.pl` adds, and its
+alternative system releases exclude each other through
+`otherproviders()`, which the same script resolves to the top-level
+choice. `check-uml-vm-tools` in `default.nix` proves the primitives;
+the distro doors are proven by hand.
