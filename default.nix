@@ -1843,27 +1843,6 @@ let
     check-uml-vm-tools =
       let
         umlRun = umlVmTools.runInLinuxVM;
-        # Bare images are no distro: the two fragments every RPM flow
-        # needs. The install prelude stages the store's rpm and cpio
-        # under /mnt (with the loader) for the chrooted install; the
-        # macros switch off what a bare image cannot do (buildroot
-        # policies, which want distro tools, and debuginfo, which
-        # wants find-debuginfo). ELF dependency generation is NOT
-        # among them: the fileattrs tables redefine its generators
-        # after the macros load (measured: `%__elf_* %{nil}` changes
-        # nothing), so each ELF recipe opts out in its own spec with
-        # `AutoReqProv: no` instead.
-        rpmBarePreInstall = ''
-          mkdir -p /mnt/usr/bin /mnt/lib64
-          ln -s ${pkgs.rpm}/bin/rpm /mnt/usr/bin/rpm
-          ln -s ${pkgs.cpio}/bin/cpio /mnt/usr/bin/cpio
-          ln -s ${pkgs.glibc}/lib/ld-linux-x86-64.so.2 /mnt/lib64/ld-linux-x86-64.so.2
-        '';
-        rpmBareMacros = ''
-          mkdir -p /etc/rpm
-          echo "%__os_install_post %{nil}" >> /etc/rpm/macros
-          echo "%debug_package %{nil}" >> /etc/rpm/macros
-        '';
         guests = rec {
           trivial = umlRun (
             pkgs.runCommand "uml-check-trivial" { } ''echo ok > $out''
@@ -1988,7 +1967,7 @@ let
             rpms = [ "${guests.rpmTestRpm}/proof.rpm" ];
             name = "uml-check-fill-rpm";
             fullName = "uml-check-fill-rpm";
-            preInstall = rpmBarePreInstall;
+            preInstall = umlVmTools.bareImageRpmPreInstall;
           };
           # The filled image loop-mounted read-only, copied out.
           extractedRpm = umlVmTools.extractFs { file = "${guests.fillRpm}/disk-image.raw"; };
@@ -2078,7 +2057,7 @@ let
             diskImageFormat = "raw";
             name = "uml-check-built-rpm";
             src = guests.rpmSrc;
-            preBuild = rpmBareMacros;
+            preBuild = umlVmTools.bareImageRpmMacros;
             postBuild = ":";
             preInstall = ":";
             postInstall = ":";
@@ -2101,7 +2080,8 @@ let
                 License: GPL-3.0-or-later
                 Source0: hello-${version}.tar.gz
                 # No provider names a bare image's libraries, so no
-                # generated dependencies either (see `rpmBareMacros`).
+                # generated dependencies either (see
+                # `umlVmTools.bareImageRpmMacros`).
                 AutoReqProv: no
 
                 %description
@@ -2160,7 +2140,7 @@ let
             diskImageFormat = "raw";
             name = "uml-check-built-hello";
             src = guests.helloSrc;
-            preBuild = rpmBareMacros;
+            preBuild = umlVmTools.bareImageRpmMacros;
             postBuild = ":";
             preInstall = ":";
             postInstall = ":";
@@ -2171,7 +2151,7 @@ let
             rpms = [ "${guests.builtHello}/rpms/uml-check-hello-toolchain/hello-${pkgs.hello.version}-1.x86_64.rpm" ];
             name = "uml-check-fill-hello";
             fullName = "uml-check-fill-hello";
-            preInstall = rpmBarePreInstall;
+            preInstall = umlVmTools.bareImageRpmPreInstall;
           };
           extractHello = umlVmTools.extractFs { file = "${guests.fillHello}/disk-image.raw"; };
           # A real recipe: a Deb with maintainer scripts, which run
