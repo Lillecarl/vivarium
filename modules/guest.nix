@@ -88,6 +88,38 @@ in
     depends = [ "/nix" ];
   };
 
+  /*
+    The database boots in WAL mode with no `-wal` and `-shm` beside it,
+    which a running host never has: something there always has it open.
+    A read-only WAL reader that cannot write the directory needs both
+    files to exist, so until a root Nix process opened the database,
+    such a reader failed with "unable to open database file". Measured
+    with harmonia, whose cache serves as a DynamicUser: HTTP 500 on every
+    narinfo.
+
+    `persist_wal` keeps both files when this connection closes; a plain
+    open deletes them again on close (measured with sqlite 3).
+  */
+  systemd.services.vivarium-nix-db = lib.mkIf config.vivarium.nixDatabase.enable {
+    description = "Give the Nix database the WAL files a running host has";
+    wantedBy = [ "sysinit.target" ];
+    before = [
+      "sysinit.target"
+      "nix-daemon.service"
+    ];
+    after = [ "local-fs.target" ];
+    unitConfig = {
+      DefaultDependencies = false;
+      RequiresMountsFor = "/nix/var/nix/db";
+    };
+    serviceConfig = {
+      Type = "oneshot";
+      RemainAfterExit = true;
+      StandardOutput = "null";
+      ExecStart = "${lib.getExe pkgs.sqlite} /nix/var/nix/db/db.sqlite '.filectrl persist_wal 1' 'select count(*) from ValidPaths'";
+    };
+  };
+
   # vec0 is the passt uplink (NAT plus the forwarded ssh port); each of
   # `vivarium.interfaces` is an L2 link to the peers on its segment.
   networking = {

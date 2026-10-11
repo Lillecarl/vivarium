@@ -70,6 +70,10 @@ let
       timeoutMinutes = 30;
       backend = "uml";
     };
+    nix-db = {
+      description = "an unprivileged read-only reader opens the guest's Nix database";
+      timeoutMinutes = 20;
+    };
     suse-nix = {
       # The same image with a writable /nix: the kernel's overlayfs over
       # hostfs, and a collection that keeps only what is rooted.

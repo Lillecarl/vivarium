@@ -907,6 +907,23 @@ let
     };
 
     /*
+      Can an unprivileged, read-only reader open the guest's Nix
+      database, as on a running host? harmonia's cache is one.
+    */
+    nix-db = mkTest {
+      name = "nix-db";
+      nodes.one =
+        { pkgs, ... }:
+        {
+          environment.systemPackages = [ pkgs.sqlite ];
+        };
+      phases.nix-db = {
+        script = ./tests/phases/nix-db.py;
+        after = [ "boot" ];
+      };
+    };
+
+    /*
       openSUSE with a writable /nix (`vivarium.image.writableStore`):
       Nix there opens a local store whose database knows the guest's
       closure, and a collection keeps the agent.
