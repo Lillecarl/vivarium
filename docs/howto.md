@@ -236,8 +236,9 @@ Read the hash off the repository's `repomd.xml` at the time: pin the
 `primary.xml.gz` it names, from one mirror for metadata and packages
 (the origin has served a repomd whose files 404'd mid-sync). SUSE
 needs two things other distros do not: its packages carry `sha512`
-checksums, which the vendored `rpm-closure.pl` adds, and its
+checksums, which `rpm-closure-suse.patch` adds, and its
 alternative system releases exclude each other through
 `otherproviders()`, which the same script resolves to the top-level
 choice. `check-uml-vm-tools` in `default.nix` proves the primitives;
-the distro doors are proven by hand.
+the distro doors are proven by hand, and the runnable proofs live in
+`distro-proofs/` (never CI: they need the network).
