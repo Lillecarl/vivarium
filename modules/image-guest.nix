@@ -56,22 +56,27 @@ let
   rootList = pkgs.writeText "vivarium-image-roots" (lib.concatMapStrings (root: "${root}\n") roots);
 
   /*
-    A writable /nix: the host's view as the lower layer, the guest's own
-    disk as the upper. The database registers every path the view holds,
-    and each root is a GC root. Nix's collector deletes a store entry its
-    database does not know (gc.cc, "delete all paths that are invalid"),
-    so without both a collection in the guest deletes the agent.
+    A writable /nix: the host's view as the lower layer, a tmpfs as the
+    upper. Not the root disk: it has the image's own size, and Leap's had
+    no room for Nix's closure ("No space left on device", measured in
+    havsorm's fleet). Guest memory is a sparse file, so the host pays
+    for what Nix writes, and it is lost at poweroff, as a NixOS guest's
+    store writes are.
 
-    Only the first boot installs the database: a later boot keeps what
-    the guest's own Nix wrote.
+    The database registers every path the view holds, and each root is a
+    GC root. Nix's collector deletes a store entry its database does not
+    know (gc.cc, "delete all paths that are invalid"), so without both a
+    collection in the guest deletes the agent.
   */
   mountStore =
     if cfg.writableStore then
       ''
         if ! mountpoint -q /nix; then
-          mkdir -p /run/vivarium/host-nix /var/lib/vivarium/nix-upper /var/lib/vivarium/nix-work /nix
+          mkdir -p /run/vivarium/host-nix /run/vivarium/nix-rw /nix
           mount -t hostfs none /run/vivarium/host-nix -o "hostfs=$(arg VIVARIUM_STORE)"
-          mount -t overlay overlay -o lowerdir=/run/vivarium/host-nix,upperdir=/var/lib/vivarium/nix-upper,workdir=/var/lib/vivarium/nix-work /nix
+          mount -t tmpfs -o mode=0755 tmpfs /run/vivarium/nix-rw
+          mkdir -p /run/vivarium/nix-rw/upper /run/vivarium/nix-rw/work
+          mount -t overlay overlay -o lowerdir=/run/vivarium/host-nix,upperdir=/run/vivarium/nix-rw/upper,workdir=/run/vivarium/nix-rw/work /nix
         fi
         if [ ! -e /nix/var/nix/db/db.sqlite ]; then
           mkdir -p /nix/var/nix/db /nix/var/nix/gcroots/vivarium
@@ -231,7 +236,9 @@ in
             description = ''
               Make `/nix` writable, with a Nix database over the paths the
               guest boots with, as a NixOS guest has. For a test that
-              installs Nix on the image, or that runs Nix there.
+              installs Nix on the image, or that runs Nix there. Writes go
+              to memory, within `vivarium.memory`, and are lost at
+              poweroff.
 
               Without it, `/nix` is the host's store view, read-only, and
               Nix in the guest cannot open a local store.
