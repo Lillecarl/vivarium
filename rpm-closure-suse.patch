@@ -1,23 +1,39 @@
 --- a/pkgs/build-support/vm/rpm/rpm-closure.pl
 +++ b/pkgs/build-support/vm/rpm/rpm-closure.pl
-@@ -91,6 +91,21 @@
+@@ -91,6 +91,37 @@
  }
 
  my %provides;
-+# A capability with several providers resolves to a top-level package
-+# when one names it, and to sorted-last otherwise: SUSE marks
-+# alternative system releases with `otherproviders()`, meaning at
-+# most one may install, and the caller's own choice must win over the
-+# alphabetical accident (measured: `aaa_base` needs
-+# `distribution-release`, which both `openSUSE-release` and
-+# `unified-installer-release` provide; installing both fails on
-+# /etc/os-release).
++# A capability several packages provide resolves to the sorted-last
++# one, exactly as upstream -- except when the providers cannot
++# coexist. SUSE marks alternative system releases
++# `otherproviders()`: at most one may install, so the caller's own
++# top-level choice must win over the alphabetical accident
++# (measured: `aaa_base` needs `distribution-release`, which both
++# `openSUSE-release` and `unified-installer-release` provide;
++# installing both fails on /etc/os-release). Capabilities without
++# that marker resolve byte-identically to upstream.
 +my %toplevel = map { $_ => 1 } @toplevelPkgs;
++my %otherprovidersOf;
++foreach my $pkgName (keys %pkgs) {
++    my $conflicts = $pkgs{$pkgName}->{format}->{'rpm:conflicts'}->{'rpm:entry'} // [];
++    foreach my $conflict (@{$conflicts}) {
++        if ($conflict->{name} =~ /^otherproviders\((.*)\)$/) {
++            $otherprovidersOf{$pkgName}{$1} = 1;
++        }
++    }
++}
++sub exclusive {
++    my ($cap, $a, $b) = @_;
++    return $otherprovidersOf{$a}{$cap} || $otherprovidersOf{$b}{$cap};
++}
 +sub prefer {
-+    my ($have, $want) = @_;
++    my ($cap, $have, $want) = @_;
 +    return 1 if !defined $have;
++    return 1 if !exclusive($cap, $have, $want);
 +    return 1 if $toplevel{$want} && !$toplevel{$have};
-+    return 0;
++    return 0 if $toplevel{$have} && !$toplevel{$want};
++    return 1;
 +}
  PKG: foreach my $pkgName (sort(keys %pkgs)) {
      #print STDERR "looking at $pkgName\n";
@@ -27,14 +43,14 @@
          #print STDERR "  $pkgName provides $req->{name}\n";
          #die "multiple provides for $req->{name}" if defined $provides{$req->{name}};
 -        $provides{$req->{name}} = $pkgName;
-+        $provides{$req->{name}} = $pkgName if prefer($provides{$req->{name}}, $pkgName);
++        $provides{$req->{name}} = $pkgName if prefer($req->{name}, $provides{$req->{name}}, $pkgName);
      }
 
      if (defined $pkg->{format}->{file}) {
          foreach my $file (@{$pkg->{format}->{file}}) {
            #print STDERR "  provides file $file\n";
 -          $provides{$file} = $pkgName;
-+          $provides{$file} = $pkgName if prefer($provides{$file}, $pkgName);
++          $provides{$file} = $pkgName if prefer($file, $provides{$file}, $pkgName);
          }
      }
  }
