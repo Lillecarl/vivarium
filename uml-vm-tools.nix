@@ -697,11 +697,14 @@ rec {
         preVM = ''
           diskImage=$(pwd)/disk-image.raw
           origImage=${attrs.diskImage}
-          if test -d "$origImage"; then origImage="$origImage/disk-image.qcow2"; fi
-          format=${lib.escapeShellArg (attrs.diskImageFormat or "")}
-          if test -z "$format"; then
-            if test -d "$origImage"; then format=qcow2; else format=raw; fi
+          if test -d "$origImage"; then
+            origImage="$origImage/disk-image.qcow2"
+            defaultFormat=qcow2
+          else
+            defaultFormat=raw
           fi
+          format=${lib.escapeShellArg (attrs.diskImageFormat or "")}
+          if test -z "$format"; then format=$defaultFormat; fi
           ${pkgs.buildPackages.qemu_kvm}/bin/qemu-img convert -f "$format" -O raw "$origImage" $diskImage
         '';
 
