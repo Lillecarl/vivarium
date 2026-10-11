@@ -1838,8 +1838,11 @@ let
 
     # Do the UML guest primitives behave like vmTools.runInLinuxVM,
     # minus KVM? One guest per case, each asserting its own output on
-    # the host below. Slow (nineteen boots), but the alternative is
-    # finding out from a red disk image.
+    # the host below. One shared guest set, two verdicts: the bare
+    # check proves the runner (ten boots), and its `.recipes` proves
+    # the ports on top (nine more). Build only the half the change
+    # touches: `check-uml-vm-tools` or `check-uml-vm-tools.recipes`.
+    # Either way the alternative is finding out from a red disk image.
     check-uml-vm-tools =
       let
         umlRun = umlVmTools.runInLinuxVM;
@@ -2228,6 +2231,15 @@ let
         test "$(cat ${guests.extracted}/nested-file)" = nested
         test "$(cat ${guests.extractedMtd}/mtd-marker)" = mtd-marker-content
         test "$(cat ${guests.extractedMtd}/mtd-nested-file)" = mtd-nested
+        test -e ${guests.kernelConfig}
+        touch $out
+      ''
+      // {
+        # The recipes on top of the primitives: RPM and Deb fills,
+        # toolchain images, buildRPM round-trips and the test
+        # script's shape. Build `check-uml-vm-tools.recipes` alone
+        # when the change is above the runner.
+        recipes = pkgs.runCommand "uml-vm-tools-recipes-check" { } ''
         test "$(cat ${guests.extractedRpm}/usr/share/uml-proof/marker)" = rpm-marker-content
         test "$(cat ${guests.fillRpm}/nix-support/full-name)" = uml-check-fill-rpm
         test "$(cat ${guests.extractDeb}/usr/share/uml-proof/marker)" = deb-marker-content
@@ -2244,9 +2256,9 @@ let
         grep -q 'init=/bin/sh' ${guests.testScript}
         grep -q 'ubd0="$diskImage"' ${guests.testScript}
         grep -q 'disk-image.raw' ${guests.testScript}
-        test -e ${guests.kernelConfig}
         touch $out
       '';
+      };
 
     check-workflows = ci.check ./.github/workflows;
 
