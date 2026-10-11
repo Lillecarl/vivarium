@@ -70,6 +70,13 @@ let
       timeoutMinutes = 30;
       backend = "uml";
     };
+    suse-nix = {
+      # The same image with a writable /nix: the kernel's overlayfs over
+      # hostfs, and a collection that keeps only what is rooted.
+      description = "Nix on openSUSE Leap, with a writable store";
+      timeoutMinutes = 30;
+      backend = "uml";
+    };
     screen = {
       description = "the host reads a guest's screen, types on it and points at it";
       timeoutMinutes = 30;

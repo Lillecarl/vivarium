@@ -907,6 +907,26 @@ let
     };
 
     /*
+      openSUSE with a writable /nix (`vivarium.image.writableStore`):
+      Nix there opens a local store whose database knows the guest's
+      closure, and a collection keeps the agent.
+    */
+    suse-nix = mkTest {
+      name = "suse-nix";
+      settings.nix = "${pkgs.nix}";
+      nodes.suse = {
+        vivarium.image = images.opensuse-leap-16_0 // {
+          writableStore = true;
+        };
+        vivarium.memory = "1024M";
+      };
+      phases.nix = {
+        script = ./tests/phases/suse-nix.py;
+        after = [ "boot" ];
+      };
+    };
+
+    /*
       Ansible from a NixOS controller configures openSUSE over a segment.
 
       `ctl` holds the key; the SUSE seed authorises it for `ansible`, with

@@ -22,6 +22,72 @@ let
 
   runner = config.system.build.vivariumRunnerPackage;
 
+  # What the guest's store view holds: the agent and its units. With a
+  # writable store also every `extraRoots` path, where `mkTest` puts
+  # `settings`, as a NixOS guest has them. A read-only view leaves them
+  # out, for `add_closure` to bring in.
+  roots = [
+    runner
+    units
+  ]
+  ++ lib.optionals cfg.writableStore config.vivarium.nixDatabase.extraRoots;
+  registration = pkgs.closureInfo { rootPaths = roots; };
+
+  # A database over `roots`, built as a NixOS guest's is (default.nix
+  # `vivariumNixDatabase` says why each step is there).
+  database = pkgs.runCommand "vivarium-image-nix-database" {
+    nativeBuildInputs = [
+      pkgs.nix
+      pkgs.sqlite
+    ];
+  } ''
+    export USER=nobody
+    export NIX_REMOTE="local?root=$PWD"
+    nix-store --load-db < ${registration}/registration
+    sqlite3 nix/var/nix/db/db.sqlite 'UPDATE ValidPaths SET registrationTime = 0'
+    sqlite3 nix/var/nix/db/db.sqlite '.dump' > db.dump
+    mkdir -p $out
+    sqlite3 $out/db.sqlite '.read db.dump'
+    cp nix/var/nix/db/schema $out/schema
+    sqlite3 $out/db.sqlite 'pragma journal_mode = wal' > /dev/null
+    test -s $out/db.sqlite
+  '';
+
+  rootList = pkgs.writeText "vivarium-image-roots" (lib.concatMapStrings (root: "${root}\n") roots);
+
+  /*
+    A writable /nix: the host's view as the lower layer, the guest's own
+    disk as the upper. The database registers every path the view holds,
+    and each root is a GC root. Nix's collector deletes a store entry its
+    database does not know (gc.cc, "delete all paths that are invalid"),
+    so without both a collection in the guest deletes the agent.
+
+    Only the first boot installs the database: a later boot keeps what
+    the guest's own Nix wrote.
+  */
+  mountStore =
+    if cfg.writableStore then
+      ''
+        if ! mountpoint -q /nix; then
+          mkdir -p /run/vivarium/host-nix /var/lib/vivarium/nix-upper /var/lib/vivarium/nix-work /nix
+          mount -t hostfs none /run/vivarium/host-nix -o "hostfs=$(arg VIVARIUM_STORE)"
+          mount -t overlay overlay -o lowerdir=/run/vivarium/host-nix,upperdir=/var/lib/vivarium/nix-upper,workdir=/var/lib/vivarium/nix-work /nix
+        fi
+        if [ ! -e /nix/var/nix/db/db.sqlite ]; then
+          mkdir -p /nix/var/nix/db /nix/var/nix/gcroots/vivarium
+          install -m 0644 ${database}/db.sqlite ${database}/schema /nix/var/nix/db/
+          n=0
+          while read -r root; do
+            n=$((n + 1))
+            ln -sfn "$root" "/nix/var/nix/gcroots/vivarium/$n"
+          done < ${rootList}
+        fi
+      ''
+    else
+      ''
+        mountpoint -q /nix || mount -t hostfs none /nix -o "hostfs=$(arg VIVARIUM_STORE)"
+      '';
+
   # What the agent's commands find on PATH: the distribution's own.
   guestPath = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
 
@@ -57,7 +123,7 @@ let
   bootcmd = ''
     arg() { tr ' ' '\n' < /proc/cmdline | sed -n "s/^$1=//p"; }
     mkdir -p /nix /artifacts
-    mountpoint -q /nix || mount -t hostfs none /nix -o "hostfs=$(arg VIVARIUM_STORE)"
+    ${mountStore}
     artifacts=$(arg VIVARIUM_ARTIFACTS)
     if [ -n "$artifacts" ]; then mountpoint -q /artifacts || mount -t hostfs none /artifacts -o "hostfs=$artifacts"; fi
     cp ${units}/* /run/systemd/system/
@@ -159,6 +225,22 @@ in
             type = types.listOf types.str;
             default = [ ];
           };
+          writableStore = mkOption {
+            type = types.bool;
+            default = false;
+            description = ''
+              Make `/nix` writable, with a Nix database over the paths the
+              guest boots with, as a NixOS guest has. For a test that
+              installs Nix on the image, or that runs Nix there.
+
+              Without it, `/nix` is the host's store view, read-only, and
+              Nix in the guest cannot open a local store.
+
+              A path `add_closure` brings in later is not in the database,
+              so Nix in the guest calls it invalid, and its collector
+              deletes it.
+            '';
+          };
           userData = mkOption {
             type = types.attrsOf types.anything;
             default = { };
@@ -196,6 +278,11 @@ in
       seed = "${seed}";
     };
     # The agent's closure: what the guest's store view holds.
-    system.build.vivariumImageClosure = pkgs.closureInfo { rootPaths = [ runner units ]; };
+    system.build.vivariumImageClosure = pkgs.closureInfo {
+      rootPaths = roots ++ lib.optionals cfg.writableStore [
+        database
+        rootList
+      ];
+    };
   };
 }
