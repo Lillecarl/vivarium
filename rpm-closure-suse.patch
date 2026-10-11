@@ -1,0 +1,49 @@
+--- a/pkgs/build-support/vm/rpm/rpm-closure.pl
++++ b/pkgs/build-support/vm/rpm/rpm-closure.pl
+@@ -91,6 +91,21 @@
+ }
+
+ my %provides;
++# A capability with several providers resolves to a top-level package
++# when one names it, and to sorted-last otherwise: SUSE marks
++# alternative system releases with `otherproviders()`, meaning at
++# most one may install, and the caller's own choice must win over the
++# alphabetical accident (measured: `aaa_base` needs
++# `distribution-release`, which both `openSUSE-release` and
++# `unified-installer-release` provide; installing both fails on
++# /etc/os-release).
++my %toplevel = map { $_ => 1 } @toplevelPkgs;
++sub prefer {
++    my ($have, $want) = @_;
++    return 1 if !defined $have;
++    return 1 if $toplevel{$want} && !$toplevel{$have};
++    return 0;
++}
+ PKG: foreach my $pkgName (sort(keys %pkgs)) {
+     #print STDERR "looking at $pkgName\n";
+     my $pkg = $pkgs{$pkgName};
+@@ -110,13 +125,13 @@
+     foreach my $req (@{$provides}) {
+         #print STDERR "  $pkgName provides $req->{name}\n";
+         #die "multiple provides for $req->{name}" if defined $provides{$req->{name}};
+-        $provides{$req->{name}} = $pkgName;
++        $provides{$req->{name}} = $pkgName if prefer($provides{$req->{name}}, $pkgName);
+     }
+
+     if (defined $pkg->{format}->{file}) {
+         foreach my $file (@{$pkg->{format}->{file}}) {
+           #print STDERR "  provides file $file\n";
+-          $provides{$file} = $pkgName;
++          $provides{$file} = $pkgName if prefer($provides{$file}, $pkgName);
+         }
+     }
+ }
+@@ -186,6 +201,8 @@
+         print "    sha1 = \"$pkg->{checksum}->{content}\";\n";
+     } elsif ($pkg->{checksum}->{type} eq "sha256") {
+         print "    sha256 = \"$pkg->{checksum}->{content}\";\n";
++    } elsif ($pkg->{checksum}->{type} eq "sha512") {
++        print "    sha512 = \"$pkg->{checksum}->{content}\";\n";
+     } else {
+         die "unsupported hash type";
+     }

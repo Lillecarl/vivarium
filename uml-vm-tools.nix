@@ -250,9 +250,16 @@ let
       guestRoot=$NIX_BUILD_TOP/uml-root
       ${coreutils}/bin/mkdir -p $guestRoot/bin
       ${coreutils}/bin/cp -p ${staticBusybox}/bin/busybox $guestRoot/bin/busybox
-      for applet in mount mkdir ln cat echo ls poweroff cp chroot touch; do
-        ${coreutils}/bin/ln -s busybox "$guestRoot/bin/$applet"
+      # Every applet, not a hand-kept list: stage 2 gains a command
+      # and a fixed list breaks, while the extra symlinks cost
+      # nothing. The static binary runs on the builder for `--list`.
+      for applet in $(${staticBusybox}/bin/busybox --list); do
+        ${coreutils}/bin/ln -sf busybox "$guestRoot/bin/$applet"
       done
+      # `/bin/sh` is bash, not a busybox applet link: the loop above
+      # now provides `sh` too, and a `cp` through that symlink would
+      # overwrite the busybox binary itself, so remove both first.
+      ${coreutils}/bin/rm -f "$guestRoot/bin/bash" "$guestRoot/bin/sh"
       ${coreutils}/bin/cp ${staticBash}/bin/bash "$guestRoot/bin/bash"
       ${coreutils}/bin/ln -s bash "$guestRoot/bin/sh"
       ${coreutils}/bin/cp ${stage2Uml} $guestRoot/stage2
@@ -644,16 +651,18 @@ rec {
         builder,
         ...
       }:
-      {
-        builder = "${bash}/bin/sh";
-        args = [
-          "-e"
-          umlRunCommand
-        ];
-        origArgs = args;
-        origBuilder = builder;
-        __structuredAttrs = true;
-      }
+      lib.warnIf (QEMU_OPTS != "")
+        "uml-vm-tools: QEMU_OPTS is accepted for call-shape compatibility but ignored -- the guest is UML, not QEMU; append to the kernel command line with UML_OPTS instead."
+        {
+          builder = "${bash}/bin/sh";
+          args = [
+            "-e"
+            umlRunCommand
+          ];
+          origArgs = args;
+          origBuilder = builder;
+          __structuredAttrs = true;
+        }
     );
 
   /*
@@ -669,8 +678,10 @@ rec {
     - `preVM` makes a writable raw copy (`qemu-img convert`) instead of
       a qcow2 copy-on-write overlay: UML reads block devices, not image
       formats. A directory `diskImage` still resolves to its
-      `disk-image.qcow2`, as there. `diskImageFormat` defaults to `raw`
-      when the caller sets none; nixpkgs requires it.
+      `disk-image.qcow2`, as there. `diskImageFormat` defaults to `qcow2`
+      for a directory image and `raw` otherwise; nixpkgs requires it.
+      The old bare default of `raw` mounted garbage from directory
+      inputs (measured), so the default follows the input's shape.
     - Only `mountDisk=true` (the default) takes the image branch: the
       builder environment carries it as `1`, which `umlRunCommand`
       turns into `UML_IMAGE=1`. QEMU device paths have no meaning here:
@@ -687,7 +698,11 @@ rec {
           diskImage=$(pwd)/disk-image.raw
           origImage=${attrs.diskImage}
           if test -d "$origImage"; then origImage="$origImage/disk-image.qcow2"; fi
-          ${pkgs.buildPackages.qemu_kvm}/bin/qemu-img convert -f "${attrs.diskImageFormat or "raw"}" -O raw "$origImage" $diskImage
+          format=${lib.escapeShellArg (attrs.diskImageFormat or "")}
+          if test -z "$format"; then
+            if test -d "$origImage"; then format=qcow2; else format=raw; fi
+          fi
+          ${pkgs.buildPackages.qemu_kvm}/bin/qemu-img convert -f "$format" -O raw "$origImage" $diskImage
         '';
 
         postHook = ''
@@ -1092,11 +1107,15 @@ rec {
     (`pkgs/build-support/vm/default.nix:835`): host-side Perl over the
     repositories' metadata, producing a Nix expression of `fetchurl`
     calls for the package closure. nixpkgs' body verbatim, with only
-    the tool paths retargeted; the closure script is the vendored
-    `./rpm-closure.pl`, which adds what upstream lacks for SUSE: a
-    `sha512` arm (openSUSE signs its packages that way and no other)
-    and top-level preference among several providers of one
-    capability (SUSE's `otherproviders()` releases).
+    the tool paths retargeted; the closure script is upstream's
+    `pkgs/build-support/vm/rpm/rpm-closure.pl` with
+    `./rpm-closure-suse.patch` applied, which adds what upstream
+    lacks for SUSE: a `sha512` arm (openSUSE signs its packages that
+    way and no other) and top-level preference among several
+    providers of one capability (SUSE's `otherproviders()`
+    releases). A patch, not a copy: upstream changes merge, and a
+    hunk that no longer applies fails the build instead of rotting
+    silently. If upstream grows either, drop the patch.
   */
   rpmClosureGenerator =
     {
@@ -1114,10 +1133,13 @@ rec {
           pkgs.perlPackages.URI
           pkgs.perlPackages.XMLSimple
           pkgs.zstd
+          pkgs.patch
         ];
         inherit archs;
       }
       ''
+        cp ${pkgs.path + "/pkgs/build-support/vm/rpm/rpm-closure.pl"} ./rpm-closure.pl
+        patch -p1 ./rpm-closure.pl < ${./rpm-closure-suse.patch}
         ${lib.concatImapStrings (i: pl: ''
           echo "decompressing ${pl}..."
           case ${pl} in
@@ -1138,7 +1160,7 @@ rec {
               ;;
           esac
         '') packagesLists}
-        perl -w ${./rpm-closure.pl} \
+        perl -w ./rpm-closure.pl \
           ${
             lib.concatImapStrings (i: pl: "./packages_${toString i}.xml ${pl.snd} ") (
               lib.zipLists packagesLists urlPrefixes
