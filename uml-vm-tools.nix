@@ -22,10 +22,12 @@
 # virtiofsd). Pure host-side data (`rpmDistros`, `debDistros`, the
 # package sets) needs no port and rides the overlay as is.
 # Ours on top: `createEmptyRawImage`, the empty image plus the raw
-# conversion the fill ports share, and the toolchain builders
+# conversion the fill ports share; the toolchain builders
 # (`makeStoreImage`, `makeRPMToolchainImage`, `makeDeb`,
 # `makeDebShim`): images and packages assembled from the store for
-# callers with no distro, e.g. `buildRPM` over a symlinked compiler.
+# callers with no distro, e.g. `buildRPM` over a symlinked compiler;
+# and the bare-image RPM policy (`bareImageRpmPreInstall`,
+# `bareImageRpmMacros`) every RPM flow on such an image needs.
 # Left out on purpose:
 # Left out because UML has no counterpart, not from neglect: `qemu`
 # and `qemuCommandLinux` are QEMU itself; `initrd`, `initrdUtils`,
@@ -396,6 +398,31 @@ let
     createEmptyImage { inherit size fullName; } + convertToRawImage;
 
   /*
+    Bare images are no distro: the two fragments every RPM flow on
+    one needs, shared by the check and by-hand recipes alike. The
+    install prelude stages the store's rpm and cpio under `/mnt`
+    (with the loader) for the chrooted install; the macros switch
+    off what a bare image cannot do (buildroot policies, which want
+    distro tools, and debuginfo, which wants find-debuginfo). ELF
+    dependency generation is NOT among them: the fileattrs tables
+    redefine its generators after the macros load (measured:
+    `%__elf_* %{nil}` changes nothing), so each ELF recipe opts out
+    in its own spec with `AutoReqProv: no` instead.
+  */
+  bareImageRpmPreInstall = ''
+    mkdir -p /mnt/usr/bin /mnt/lib64
+    ln -s ${pkgs.rpm}/bin/rpm /mnt/usr/bin/rpm
+    ln -s ${pkgs.cpio}/bin/cpio /mnt/usr/bin/cpio
+    ln -s ${pkgs.glibc}/lib/ld-linux-x86-64.so.2 /mnt/lib64/ld-linux-x86-64.so.2
+  '';
+
+  bareImageRpmMacros = ''
+    mkdir -p /etc/rpm
+    echo "%__os_install_post %{nil}" >> /etc/rpm/macros
+    echo "%debug_package %{nil}" >> /etc/rpm/macros
+  '';
+
+  /*
     A raw ext4 image at `$out`, assembled host-side from store
     symlinks: a static busybox for `/bin/sh`, every `bin/*` of each
     package in `tools` linked into `/usr/bin`, and the loader, laid
@@ -556,12 +583,13 @@ in
 rec {
   inherit umlKernel createEmptyImage createEmptyRawImage defaultCreateRootFS;
   inherit makeStoreImage makeRPMToolchainImage makeDeb makeDebShim;
+  inherit bareImageRpmPreInstall bareImageRpmMacros;
 
   # The nixpkgs-compatible surface: exactly the `vmTools` names this
   # set replaces. The overlay reads this list rather than naming them
-  # again, so the two cannot drift apart; `umlKernel` and the helpers
-  # above (`createEmptyRawImage`, the toolchain builders) stay out,
-  # since nixpkgs' `vmTools` has none of them.
+  # again, so the two cannot drift apart; `umlKernel`, the image and
+  # toolchain builders and the bare-image fragments stay out, since
+  # nixpkgs' `vmTools` has none of them.
   names = [
     "runInLinuxVM"
     "runInLinuxImage"
