@@ -4,6 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "vivarium"
+license = "Apache-2.0"
 version = "0.1.0"
 description = "A session a caller drives: boot guests, run phases, hold, tear down"
 requires-python = ">=3.12"

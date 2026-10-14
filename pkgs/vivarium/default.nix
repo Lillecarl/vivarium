@@ -42,7 +42,7 @@ python3Packages.buildPythonPackage {
 
   meta = {
     description = "Drive a run of NixOS guests a step at a time";
-    license = lib.licenses.mit;
+    license = lib.licenses.asl20;
     platforms = lib.platforms.linux;
     mainProgram = "vivarium";
   };

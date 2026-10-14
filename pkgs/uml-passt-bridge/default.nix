@@ -9,7 +9,7 @@ rustPlatform.buildRustPackage {
 
   meta = with lib; {
     description = "Bridge UML fd vector transport to passt for unprivileged networking";
-    license = licenses.mit;
+    license = licenses.asl20;
     platforms = platforms.linux;
     mainProgram = "uml-passt-bridge";
   };

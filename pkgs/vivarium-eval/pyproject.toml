@@ -4,6 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "vivarium-eval"
+license = "Apache-2.0"
 version = "0.1.0"
 description = "Name a run; it is evaluated, built and run, with no nix build first"
 requires-python = ">=3.12"

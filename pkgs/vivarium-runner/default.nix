@@ -24,7 +24,7 @@ python3Packages.buildPythonPackage {
 
   meta = {
     description = "Run NixOS systems under User-Mode Linux and drive them from Python";
-    license = lib.licenses.mit;
+    license = lib.licenses.asl20;
     platforms = lib.platforms.linux;
     mainProgram = "vivarium-run";
   };
