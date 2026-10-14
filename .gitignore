@@ -2,7 +2,3 @@ result*
 # Throwaway experiments; see spike/default.nix.
 /spike/
 __pycache__/
-# `nix flake ...` writes one and jj tracks it on sight. This repository
-# is `nix build --file .` first; a lock would pin the one dependency for
-# flake callers, who follow their own nixpkgs on purpose.
-flake.lock

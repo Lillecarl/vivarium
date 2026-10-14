@@ -5,11 +5,19 @@
 # writes an input for this repository gets a curated set of outputs rather
 # than nothing.
 #
-# One input, because there is one dependency.
+# Two inputs. nixpkgs is the one dependency. nixidae pins nothing that this
+# file reads; it is in `flake.lock` because nix/sources.nix reads the nixidae
+# commit from there when this repository stands alone.
 {
   description = "NixOS integration tests on User-Mode Linux: no KVM, no root";
 
-  inputs.nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
+  inputs = {
+    nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
+    nixidae = {
+      url = "github:nixidae/nixidae";
+      flake = false;
+    };
+  };
 
   outputs =
     { nixpkgs, ... }:
