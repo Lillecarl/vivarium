@@ -33,7 +33,6 @@
           k8s
           check-k8s-images
           check-k8s-config
-          check-workflows
           ;
       };
 
@@ -50,12 +49,6 @@
           type = "app";
           meta.description = "Run speedtest-cli inside a UML guest";
           program = lib.getExe built.speedtest;
-        };
-
-        render-workflows = {
-          type = "app";
-          meta.description = "Regenerate .github/workflows from ci/workflows.nix";
-          program = lib.getExe built.render-workflows;
         };
       };
     };

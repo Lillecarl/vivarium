@@ -689,14 +689,14 @@ a control plane that never became healthy.
 
 ## CI
 
-The workflows under `.github/workflows` are generated. `ci/workflows.nix`
-is the source, `nix run .#render-workflows` regenerates them, and
-`.#check-workflows` fails when the two have drifted — so the YAML GitHub
-runs is always what the Nix says.
+The tests run in [nixidae](https://github.com/nixidae/nixidae), which this
+repository is exported from. `ci/workflows.nix` is the source of the
+workflows. nixidae renders each one to `.github/workflows/vivarium-<name>.yml`
+and fails a check when the two have drifted, so the YAML GitHub runs is
+always what the Nix says.
 
 ```console
-$ nix run .#render-workflows   # after editing ci/workflows.nix
-$ nix build .#check-workflows  # what CI runs to keep you honest
+$ nix run --file . ci-workflow-update   # in nixidae, after editing ci/workflows.nix
 ```
 
 What it costs, on a stock `ubuntu-24.04` runner with the kernel already in

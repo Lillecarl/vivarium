@@ -501,9 +501,9 @@ rejects anything near `UNIX_PATH_MAX`.
 
 ## Generated files
 
-`.github/workflows/*.yml` is rendered from `ci/workflows.nix`. Edit the
-Nix, then `nix run .#render-workflows`, then commit both — CI runs
-`.#check-workflows` and fails on drift.
+nixidae's `.github/workflows/vivarium-*.yml` is rendered from
+`ci/workflows.nix`. Edit the Nix, then run `nix run --file . ci-workflow-update`
+at the nixidae root, then commit both. nixidae's check fails on drift.
 
 ## The Kubernetes test
 

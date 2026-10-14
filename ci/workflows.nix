@@ -1,6 +1,6 @@
-# The workflows, as data.  `nix run .#render-workflows` turns each
-# attribute here into .github/workflows/<name>.yml, and `nix build
-# .#check-workflows` fails when the two have drifted.
+# The workflows, as data. nixidae turns each attribute here into
+# .github/workflows/vivarium-<name>.yml, and its check fails when the two
+# have drifted.
 { lib, ghalib }:
 let
   ci = import ./lib.nix { inherit lib; };
@@ -263,7 +263,6 @@ let
       (steps.build {
         name = "Check the generated files, the scripts, the images and the kubeadm config";
         attrs = [
-          "check-workflows"
           "check-scripts"
           "check-k8s-images"
           "check-k8s-config"
@@ -322,11 +321,6 @@ in
   # left unset, and refuses a job with no steps at all.
   ci = ghalib.evalWorkflow {
     name = "CI";
-    # UMBRELLA_GIT makes the umbrella fetch each source over the git
-    # protocol, and not through api.github.com. Anonymous api.github.com
-    # allows 60 calls an hour per IP, GitHub's runners share a NAT pool, and
-    # every source a job resolves is one call. nanopynix issue #301.
-    env.UMBRELLA_GIT = "1";
     on = {
       push = { };
       pull_request = { };

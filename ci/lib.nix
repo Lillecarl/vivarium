@@ -32,7 +32,7 @@ rec {
     checkout.enable = true;
     nix.install = {
       enable = true;
-      # No `nix_path`. `default.nix` asks the umbrella for nixpkgs -- see
+      # No `nix_path`. `default.nix` asks nixidae for nixpkgs -- see
       # ../nix/sources.nix -- so a runner needs nothing in NIX_PATH and
       # every job here builds against the revision nixidae pins, which is
       # what makes the cache able to serve them.

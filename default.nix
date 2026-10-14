@@ -9,15 +9,14 @@
 # **One dependency, and it is nixpkgs.** A guest is an ordinary NixOS
 # configuration and a kernel built from the host's own package set; nothing
 # here needs anything else. So this takes a package set and nothing else, and
-# a caller that has one -- a flake, another repository, an umbrella that holds
-# this one as a checkout -- passes it in.
+# a caller that has one -- a flake, another repository, nixidae -- passes it
+# in.
 #
-# A caller with none gets the umbrella's, the way every other project in the
-# umbrella does: `nix/sources.nix` asks nixidae, inside or outside. It used to
-# be `<nixpkgs>`, which meant `nix build --file .` built against whatever the
-# machine's NIX_PATH happened to hold -- nothing on a CI runner, and something
-# other than the umbrella's pin on a developer's. Store paths then agreed with
-# nobody, so no cache could serve them.
+# A caller with none gets nixidae's, the way every other project in nixidae
+# does: `nix/sources.nix` asks nixidae, inside or outside. `<nixpkgs>` would
+# build against whatever the machine's NIX_PATH holds -- nothing on a CI
+# runner, and something other than nixidae's pin on a developer's. Store
+# paths then agree with nobody, so no cache can serve them.
 #
 # `mkNode` and `mkTest` come out of `lib.nix` and are re-exported here, so a
 # caller with its own guests and its own script needs nothing else.
@@ -148,9 +147,8 @@ let
   k8sConfig = (mkNode k8sNodes.cp).config;
   k8sImages = pkgs.callPackage ./modules/k8s-images.nix { };
 
-  # The GitHub Actions workflows, and the check that the generated
-  # YAML in .github is still what they render to.
-  ci = pkgs.callPackage ./ci { inherit sources; };
+  # The GitHub Actions workflows, as values. nixidae renders them.
+  ci = import ./ci { inherit lib sources; };
 
   demo = mkNode {
     vivarium.memory = "512M";
@@ -1852,8 +1850,6 @@ let
           + "touch $out"
         );
 
-    check-workflows = ci.check ./.github/workflows;
-
     # The scripts in tests/, against the library they drive. Also the
     # check that `typeCheck` itself works.
     check-scripts = vivarium.typeCheck {
@@ -1923,8 +1919,9 @@ tests
     exec ${demo.config.system.build.vivariumRunner}/bin/vivarium-run --command speedtest-cli "$@"
   '';
 
-  # Regenerate .github/workflows from ci/workflows.nix.
-  render-workflows = ci.renderApp;
+  # The workflows that run the tests. nixidae renders each one to
+  # `.github/workflows/vivarium-<name>.yml`.
+  ciTestWorkflows = ci.workflows;
 
   /*
     Name a run and it is evaluated, built and run, with no `nix build`
